@@ -31,10 +31,11 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Looper;
 import android.os.ParcelUuid;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.filters.MediumTest;
-import android.support.test.rule.ServiceTestRule;
-import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.InstrumentationRegistry;
+import androidx.test.filters.MediumTest;
+import androidx.test.rule.ServiceTestRule;
+import androidx.test.runner.AndroidJUnit4;
 
 import com.android.bluetooth.R;
 import com.android.bluetooth.TestUtils;
@@ -313,13 +314,13 @@ public class A2dpServiceTest {
         testOkToConnectCase(mTestDevice,
                 BluetoothDevice.BOND_NONE, badPriorityValue, false);
         testOkToConnectCase(mTestDevice,
-                BluetoothDevice.BOND_BONDING, BluetoothProfile.PRIORITY_UNDEFINED, true);
+                BluetoothDevice.BOND_BONDING, BluetoothProfile.PRIORITY_UNDEFINED, false);
         testOkToConnectCase(mTestDevice,
                 BluetoothDevice.BOND_BONDING, BluetoothProfile.PRIORITY_OFF, false);
         testOkToConnectCase(mTestDevice,
-                BluetoothDevice.BOND_BONDING, BluetoothProfile.PRIORITY_ON, true);
+                BluetoothDevice.BOND_BONDING, BluetoothProfile.PRIORITY_ON, false);
         testOkToConnectCase(mTestDevice,
-                BluetoothDevice.BOND_BONDING, BluetoothProfile.PRIORITY_AUTO_CONNECT, true);
+                BluetoothDevice.BOND_BONDING, BluetoothProfile.PRIORITY_AUTO_CONNECT, false);
         testOkToConnectCase(mTestDevice,
                 BluetoothDevice.BOND_BONDING, badPriorityValue, false);
         testOkToConnectCase(mTestDevice,
