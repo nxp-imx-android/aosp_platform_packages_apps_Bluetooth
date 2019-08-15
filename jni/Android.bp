@@ -21,11 +21,11 @@ cc_library_shared {
     ],
     header_libs: ["libbluetooth_headers"],
     include_dirs: [
-        "libnativehelper/include/nativehelper",
         "system/bt/types",
     ],
     shared_libs: [
         "libandroid_runtime",
+        "libbase",
         "libbinder",
         "libbluetooth-binder",
         "libchrome",

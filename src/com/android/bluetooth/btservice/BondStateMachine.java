@@ -355,7 +355,7 @@ final class BondStateMachine extends StateMachine {
         intent.setFlags(Intent.FLAG_RECEIVER_FOREGROUND);
         // Workaround for Android Auto until pre-accepting pairing requests is added.
         intent.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
-        mAdapterService.sendOrderedBroadcast(intent, mAdapterService.BLUETOOTH_ADMIN_PERM);
+        mAdapterService.sendOrderedBroadcast(intent, AdapterService.BLUETOOTH_ADMIN_PERM);
     }
 
     @VisibleForTesting
@@ -391,9 +391,9 @@ final class BondStateMachine extends StateMachine {
                 newState, BluetoothProtoEnums.BOND_SUB_STATE_UNKNOWN, reason);
         mAdapterProperties.onBondStateChanged(device, newState);
 
-        if ((devProp.getDeviceType() == BluetoothDevice.DEVICE_TYPE_CLASSIC
+        if (devProp != null && ((devProp.getDeviceType() == BluetoothDevice.DEVICE_TYPE_CLASSIC
                 || devProp.getDeviceType() == BluetoothDevice.DEVICE_TYPE_DUAL)
-                && newState == BluetoothDevice.BOND_BONDED && devProp.getUuids() == null) {
+                && newState == BluetoothDevice.BOND_BONDED && devProp.getUuids() == null)) {
             infoLog(device + " is bonded, wait for SDP complete to broadcast bonded intent");
             if (!mPendingBondedDevices.contains(device)) {
                 mPendingBondedDevices.add(device);
