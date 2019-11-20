@@ -33,7 +33,6 @@ import android.util.StatsLog;
 
 import com.android.bluetooth.BluetoothMetricsProto;
 import com.android.bluetooth.Utils;
-import com.android.bluetooth.a2dp.A2dpService;
 import com.android.bluetooth.btservice.AdapterService;
 import com.android.bluetooth.btservice.MetricsLogger;
 import com.android.bluetooth.btservice.ProfileService;
@@ -221,7 +220,13 @@ public class HearingAidService extends ProfileService {
         sHearingAidService = instance;
     }
 
-    boolean connect(BluetoothDevice device) {
+    /**
+     * Connects the hearing aid profile to the passed in device
+     *
+     * @param device is the device with which we will connect the hearing aid profile
+     * @return true if hearing aid profile successfully connected, false otherwise
+     */
+    public boolean connect(BluetoothDevice device) {
         enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM, "Need BLUETOOTH ADMIN permission");
         if (DBG) {
             Log.d(TAG, "connect(): " + device);
@@ -281,7 +286,13 @@ public class HearingAidService extends ProfileService {
         return true;
     }
 
-    boolean disconnect(BluetoothDevice device) {
+    /**
+     * Disconnects hearing aid profile for the passed in device
+     *
+     * @param device is the device with which we want to disconnected the hearing aid profile
+     * @return true if hearing aid profile successfully disconnected, false otherwise
+     */
+    public boolean disconnect(BluetoothDevice device) {
         enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM, "Need BLUETOOTH ADMIN permission");
         if (DBG) {
             Log.d(TAG, "disconnect(): " + device);
@@ -505,15 +516,6 @@ public class HearingAidService extends ProfileService {
             Long deviceHiSyncId = mDeviceHiSyncIdMap.getOrDefault(device,
                     BluetoothHearingAid.HI_SYNC_ID_INVALID);
             if (deviceHiSyncId != mActiveDeviceHiSyncId) {
-                // Give an early notification to A2DP that active device is being switched
-                // to Hearing Aids before the Audio Service.
-                final A2dpService a2dpService = mFactory.getA2dpService();
-                if (a2dpService != null) {
-                    if (DBG) {
-                        Log.d(TAG, "earlyNotifyHearingAidActive for " + device);
-                    }
-                    a2dpService.earlyNotifyHearingAidActive();
-                }
                 mActiveDeviceHiSyncId = deviceHiSyncId;
                 reportActiveDevice(device);
             }
