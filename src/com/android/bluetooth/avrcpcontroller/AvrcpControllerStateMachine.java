@@ -37,8 +37,8 @@ import com.android.bluetooth.Utils;
 import com.android.bluetooth.a2dpsink.A2dpSinkService;
 import com.android.bluetooth.btservice.MetricsLogger;
 import com.android.bluetooth.btservice.ProfileService;
-import com.android.internal.util.State;
-import com.android.internal.util.StateMachine;
+import com.android.bluetooth.statemachine.State;
+import com.android.bluetooth.statemachine.StateMachine;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -881,7 +881,6 @@ class AvrcpControllerStateMachine extends StateMachine {
 
     private boolean shouldRequestFocus() {
         return mService.getResources()
-                .getBoolean(R.bool.a2dp_sink_automatically_request_audio_focus)
-                || !mAudioManager.isMusicActive();
+                .getBoolean(R.bool.a2dp_sink_automatically_request_audio_focus);
     }
 }

@@ -18,12 +18,12 @@ package com.android.bluetooth.avrcp;
 
 import android.annotation.NonNull;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.AudioPlaybackConfiguration;
 import android.media.session.MediaSession;
@@ -31,6 +31,7 @@ import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
 
@@ -137,7 +138,8 @@ public class MediaPlayerList {
                 (MediaSessionManager) context.getSystemService(Context.MEDIA_SESSION_SERVICE);
         mMediaSessionManager.addOnActiveSessionsChangedListener(
                 mActiveSessionsChangedListener, null, new Handler(looper));
-        mMediaSessionManager.setCallback(mButtonDispatchCallback, null);
+        mMediaSessionManager.addOnMediaKeyEventSessionChangedListener(
+                mContext.getMainExecutor(), mMediaKeyEventSessionChangedListener);
     }
 
     void init(AvrcpTargetService.ListCallback callback) {
@@ -200,7 +202,8 @@ public class MediaPlayerList {
         mActivePlayerId = NO_ACTIVE_PLAYER;
 
         mMediaSessionManager.removeOnActiveSessionsChangedListener(mActiveSessionsChangedListener);
-        mMediaSessionManager.setCallback(null, null);
+        mMediaSessionManager.removeOnMediaKeyEventSessionChangedListener(
+                mMediaKeyEventSessionChangedListener);
         mMediaSessionManager = null;
 
         mAudioManager.unregisterAudioPlaybackCallback(mAudioPlaybackCallback);
@@ -691,7 +694,10 @@ public class MediaPlayerList {
             boolean isActive = false;
             Log.v(TAG, "onPlaybackConfigChanged(): Configs list size=" + configs.size());
             for (AudioPlaybackConfiguration config : configs) {
-                if (config.isActive()) {
+                if (config.isActive() && (config.getAudioAttributes().getUsage()
+                            == AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                        && (config.getAudioAttributes().getContentType()
+                            == AudioAttributes.CONTENT_TYPE_SPEECH)) {
                     if (DEBUG) {
                         Log.d(TAG, "onPlaybackConfigChanged(): config="
                                  + AudioPlaybackConfiguration.toLogFriendlyString(config));
@@ -738,61 +744,45 @@ public class MediaPlayerList {
         }
     };
 
-    private final MediaSessionManager.Callback mButtonDispatchCallback =
-            new MediaSessionManager.Callback() {
+    private final MediaSessionManager.OnMediaKeyEventSessionChangedListener
+            mMediaKeyEventSessionChangedListener =
+            new MediaSessionManager.OnMediaKeyEventSessionChangedListener() {
                 @Override
-                public void onMediaKeyEventDispatched(KeyEvent event, MediaSession.Token token) {
-                    // TODO (apanicke): Add logging for these
-                }
-
-                @Override
-                public void onMediaKeyEventDispatched(KeyEvent event, ComponentName receiver) {
-                    // TODO (apanicke): Add logging for these
-                }
-
-                @Override
-                public void onAddressedPlayerChanged(MediaSession.Token token) {
-                    android.media.session.MediaController controller =
-                            new android.media.session.MediaController(mContext, token);
-
+                public void onMediaKeyEventSessionChanged(String packageName,
+                        MediaSession.Token token) {
                     if (mMediaSessionManager == null) {
-                        Log.w(TAG, "onAddressedPlayerChanged(Token): Unexpected callback "
-                                + "from the MediaSessionManager");
+                        Log.w(TAG, "onMediaKeyEventSessionChanged(): Unexpected callback "
+                                + "from the MediaSessionManager, pkg" + packageName + ", token="
+                                + token);
                         return;
                     }
-
-                    if (!mMediaPlayerIds.containsKey(controller.getPackageName())) {
-                        // Since we have a controller, we can try to to recover by adding the
-                        // player and then setting it as active.
-                        Log.w(TAG, "onAddressedPlayerChanged(Token): Addressed Player "
-                                + "changed to a player we didn't have a session for");
-                        addMediaPlayer(controller);
-                    }
-
-                    Log.i(TAG, "onAddressedPlayerChanged: token=" + controller.getPackageName());
-                    setActivePlayer(mMediaPlayerIds.get(controller.getPackageName()));
-                }
-
-                @Override
-                public void onAddressedPlayerChanged(ComponentName receiver) {
-                    if (mMediaSessionManager == null) {
-                        Log.w(TAG, "onAddressedPlayerChanged(Component): Unexpected callback "
-                                + "from the MediaSessionManager");
+                    if (TextUtils.isEmpty(packageName)) {
                         return;
                     }
+                    if (token != null) {
+                        android.media.session.MediaController controller =
+                                new android.media.session.MediaController(mContext, token);
+                        if (!mMediaPlayerIds.containsKey(controller.getPackageName())) {
+                            // Since we have a controller, we can try to to recover by adding the
+                            // player and then setting it as active.
+                            Log.w(TAG, "onMediaKeyEventSessionChanged(Token): Addressed Player "
+                                    + "changed to a player we didn't have a session for");
+                            addMediaPlayer(controller);
+                        }
 
-                    if (receiver == null) {
-                        return;
+                        Log.i(TAG, "onMediaKeyEventSessionChanged: token="
+                                + controller.getPackageName());
+                        setActivePlayer(mMediaPlayerIds.get(controller.getPackageName()));
+                    } else {
+                        if (!mMediaPlayerIds.containsKey(packageName)) {
+                            e("onMediaKeyEventSessionChanged(PackageName): Media key event session "
+                                    + "changed to a player we don't have a session for");
+                            return;
+                        }
+
+                        Log.i(TAG, "onMediaKeyEventSessionChanged: packageName=" + packageName);
+                        setActivePlayer(mMediaPlayerIds.get(packageName));
                     }
-
-                    if (!mMediaPlayerIds.containsKey(receiver.getPackageName())) {
-                        e("onAddressedPlayerChanged(Component): Addressed Player "
-                                + "changed to a player we don't have a session for");
-                        return;
-                    }
-
-                    Log.i(TAG, "onAddressedPlayerChanged: component=" + receiver.getPackageName());
-                    setActivePlayer(mMediaPlayerIds.get(receiver.getPackageName()));
                 }
             };
 
@@ -821,7 +811,7 @@ public class MediaPlayerList {
 
     private static void e(String message) {
         if (sTesting) {
-            Log.wtfStack(TAG, message);
+            Log.wtf(TAG, message);
         } else {
             Log.e(TAG, message);
         }
