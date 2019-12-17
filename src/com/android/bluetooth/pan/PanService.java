@@ -18,6 +18,8 @@ package com.android.bluetooth.pan;
 
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothPan;
+import android.bluetooth.BluetoothPan.LocalPanRole;
+import android.bluetooth.BluetoothPan.RemotePanRole;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.IBluetoothPan;
 import android.content.Context;
@@ -394,7 +396,7 @@ public class PanService extends ProfileService {
             Log.d(TAG, "Saved priority " + device + " = " + priority);
         }
         AdapterService.getAdapterService().getDatabase()
-                .setProfilePriority(device, BluetoothProfile.PAN, priority);
+                .setProfileConnectionPolicy(device, BluetoothProfile.PAN, priority);
         return true;
     }
 
@@ -404,7 +406,7 @@ public class PanService extends ProfileService {
         }
         enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM, "Need BLUETOOTH_ADMIN permission");
         return AdapterService.getAdapterService().getDatabase()
-                .getProfilePriority(device, BluetoothProfile.PAN);
+                .getProfileConnectionPolicy(device, BluetoothProfile.PAN);
     }
 
     public List<BluetoothDevice> getConnectedDevices() {
@@ -485,8 +487,8 @@ public class PanService extends ProfileService {
         }
     }
 
-    void handlePanDeviceStateChange(BluetoothDevice device, String iface, int state, int localRole,
-            int remoteRole) {
+    void handlePanDeviceStateChange(BluetoothDevice device, String iface, int state,
+            @LocalPanRole int localRole, @RemotePanRole int remoteRole) {
         if (DBG) {
             Log.d(TAG, "handlePanDeviceStateChange: device: " + device + ", iface: " + iface
                     + ", state: " + state + ", localRole:" + localRole + ", remoteRole:"
@@ -637,8 +639,6 @@ public class PanService extends ProfileService {
                 } else {
                     ifcg.setInterfaceDown();
                 }
-
-                ifcg.clearFlag("running");
                 service.setInterfaceConfig(iface, ifcg);
 
                 if (enable) {
