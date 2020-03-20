@@ -315,7 +315,7 @@ public class BluetoothMapContentObserver {
 
     public void setObserverRemoteFeatureMask(int remoteSupportedFeatures) {
         mMapSupportedFeatures =
-                remoteSupportedFeatures & BluetoothMapMasInstance.SDP_MAP_MAS_FEATURES;
+                remoteSupportedFeatures & BluetoothMapMasInstance.getFeatureMask();
         if ((BluetoothMapUtils.MAP_FEATURE_EXTENDED_EVENT_REPORT_11_BIT & mMapSupportedFeatures)
                 != 0) {
             mMapEventReportVersion = BluetoothMapUtils.MAP_EVENT_REPORT_V11;
@@ -1410,7 +1410,11 @@ public class BluetoothMapContentObserver {
             try {
                 if (c != null && c.moveToFirst()) {
                     do {
-                        long id = c.getLong(c.getColumnIndex(Sms._ID));
+                        int idIndex = c.getColumnIndexOrThrow(Sms._ID);
+                        if (c.isNull(idIndex)) {
+                            throw new IllegalStateException("ID is null");
+                        }
+                        long id = c.getLong(idIndex);
                         int type = c.getInt(c.getColumnIndex(Sms.TYPE));
                         int threadId = c.getInt(c.getColumnIndex(Sms.THREAD_ID));
                         int read = c.getInt(c.getColumnIndex(Sms.READ));
@@ -1454,10 +1458,7 @@ public class BluetoothMapContentObserver {
                                                     Context.TELEPHONY_SERVICE);
                                     if (tm != null) {
                                         phone = tm.getLine1Number();
-                                        name = tm.getLine1AlphaTag();
-                                        if (name == null || name.isEmpty()) {
-                                            name = phone;
-                                        }
+                                        name = phone;
                                     }
                                 }
                                 String priority = "no"; // no priority for sms
@@ -1569,7 +1570,11 @@ public class BluetoothMapContentObserver {
             try {
                 if (c != null && c.moveToFirst()) {
                     do {
-                        long id = c.getLong(c.getColumnIndex(Mms._ID));
+                        int idIndex = c.getColumnIndexOrThrow(Mms._ID);
+                        if (c.isNull(idIndex)) {
+                            throw new IllegalStateException("ID is null");
+                        }
+                        long id = c.getLong(idIndex);
                         int type = c.getInt(c.getColumnIndex(Mms.MESSAGE_BOX));
                         int mtype = c.getInt(c.getColumnIndex(Mms.MESSAGE_TYPE));
                         int threadId = c.getInt(c.getColumnIndex(Mms.THREAD_ID));
