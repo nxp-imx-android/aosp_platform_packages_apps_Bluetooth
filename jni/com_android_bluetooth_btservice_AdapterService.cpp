@@ -680,7 +680,8 @@ static void classInitNative(JNIEnv* env, jclass clazz) {
 }
 
 static bool initNative(JNIEnv* env, jobject obj, jboolean isGuest,
-                       jboolean isNiapMode) {
+                       jboolean isNiapMode, int configCompareResult,
+                       jobjectArray initFlags) {
   ALOGV("%s", __func__);
 
   android_bluetooth_UidTraffic.clazz =
@@ -694,9 +695,30 @@ static bool initNative(JNIEnv* env, jobject obj, jboolean isGuest,
     return JNI_FALSE;
   }
 
-  int ret = sBluetoothInterface->init(&sBluetoothCallbacks,
-                                      isGuest == JNI_TRUE ? 1 : 0,
-                                      isNiapMode == JNI_TRUE ? 1 : 0);
+  int flagCount = env->GetArrayLength(initFlags);
+  jstring* flagObjs = new jstring[flagCount];
+  const char** flags = nullptr;
+  if (flagCount > 0) {
+    flags = new const char*[flagCount + 1];
+    flags[flagCount] = nullptr;
+  }
+
+  for (int i = 0; i < flagCount; i++) {
+    flagObjs[i] = (jstring)env->GetObjectArrayElement(initFlags, i);
+    flags[i] = env->GetStringUTFChars(flagObjs[i], NULL);
+  }
+
+  int ret = sBluetoothInterface->init(
+      &sBluetoothCallbacks, isGuest == JNI_TRUE ? 1 : 0,
+      isNiapMode == JNI_TRUE ? 1 : 0, configCompareResult, flags);
+
+  for (int i = 0; i < flagCount; i++) {
+    env->ReleaseStringUTFChars(flagObjs[i], flags[i]);
+  }
+
+  delete[] flags;
+  delete[] flagObjs;
+
   if (ret != BT_STATUS_SUCCESS) {
     ALOGE("Error while setting the callbacks: %d\n", ret);
     sBluetoothInterface = NULL;
@@ -1135,7 +1157,10 @@ static void dumpNative(JNIEnv* env, jobject obj, jobject fdObj,
 
   jstring* argObjs = new jstring[numArgs];
   const char** args = nullptr;
-  if (numArgs > 0) args = new const char*[numArgs];
+  if (numArgs > 0) {
+    args = new const char*[numArgs + 1];
+    args[numArgs] = nullptr;
+  }
 
   for (int i = 0; i < numArgs; i++) {
     argObjs[i] = (jstring)env->GetObjectArrayElement(argArray, i);
@@ -1309,7 +1334,7 @@ static int getMetricIdNative(JNIEnv* env, jobject obj, jbyteArray address) {
 static JNINativeMethod sMethods[] = {
     /* name, signature, funcPtr */
     {"classInitNative", "()V", (void*)classInitNative},
-    {"initNative", "(ZZ)Z", (void*)initNative},
+    {"initNative", "(ZZI[Ljava/lang/String;)Z", (void*)initNative},
     {"cleanupNative", "()V", (void*)cleanupNative},
     {"enableNative", "()Z", (void*)enableNative},
     {"disableNative", "()Z", (void*)disableNative},
@@ -1371,6 +1396,13 @@ jint JNI_OnLoad(JavaVM* jvm, void* reserved) {
   status = android::register_com_android_bluetooth_btservice_AdapterService(e);
   if (status < 0) {
     ALOGE("jni adapter service registration failure, status: %d", status);
+    return JNI_ERR;
+  }
+
+  status =
+      android::register_com_android_bluetooth_btservice_BluetoothKeystore(e);
+  if (status < 0) {
+    ALOGE("jni BluetoothKeyStore registration failure: %d", status);
     return JNI_ERR;
   }
 

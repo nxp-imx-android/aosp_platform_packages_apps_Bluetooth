@@ -88,6 +88,7 @@ public class AdapterServiceTest {
     private @Mock android.app.Application mApplication;
 
     private static final int CONTEXT_SWITCH_MS = 100;
+    private static final int GATT_START_TIME_MS = 500;
     private static final int ONE_SECOND_MS = 1000;
     private static final int NATIVE_INIT_MS = 8000;
     private static final int NATIVE_DISABLE_MS = 1000;
@@ -105,7 +106,8 @@ public class AdapterServiceTest {
         }
         Assert.assertNotNull(Looper.myLooper());
         AdapterService adapterService = new AdapterService();
-        adapterService.initNative(false /* is_restricted */, false /* is_niap_mode */);
+        adapterService.initNative(false /* is_restricted */, false /* is_niap_mode */,
+                0 /* config_compare_result */, new String[0]);
         adapterService.cleanupNative();
         HashMap<String, HashMap<String, String>> adapterConfig = TestUtils.readAdapterConfig();
         Assert.assertNotNull(adapterConfig);
@@ -198,7 +200,7 @@ public class AdapterServiceTest {
                 invocationNumber + 1, CONTEXT_SWITCH_MS);
 
         // Start GATT
-        verify(mMockContext, timeout(CONTEXT_SWITCH_MS).times(
+        verify(mMockContext, timeout(GATT_START_TIME_MS).times(
                 startServiceCalls * invocationNumber + 1)).startService(any());
         mAdapterService.addProfile(mMockGattService);
         mAdapterService.onProfileServiceStateChanged(mMockGattService, BluetoothAdapter.STATE_ON);
@@ -328,7 +330,7 @@ public class AdapterServiceTest {
                 CONTEXT_SWITCH_MS);
 
         // Start GATT
-        verify(mMockContext, timeout(CONTEXT_SWITCH_MS).times(1)).startService(any());
+        verify(mMockContext, timeout(GATT_START_TIME_MS).times(1)).startService(any());
         mAdapterService.addProfile(mMockGattService);
 
         verifyStateChange(BluetoothAdapter.STATE_BLE_TURNING_ON,
@@ -395,7 +397,7 @@ public class AdapterServiceTest {
                 CONTEXT_SWITCH_MS);
 
         // Start GATT
-        verify(mMockContext, timeout(CONTEXT_SWITCH_MS).times(1)).startService(any());
+        verify(mMockContext, timeout(GATT_START_TIME_MS).times(1)).startService(any());
         mAdapterService.addProfile(mMockGattService);
         mAdapterService.onProfileServiceStateChanged(mMockGattService, BluetoothAdapter.STATE_ON);
 
