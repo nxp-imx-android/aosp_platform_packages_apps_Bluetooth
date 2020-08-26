@@ -35,6 +35,7 @@ import android.os.Parcelable;
 import android.util.Log;
 
 import com.android.bluetooth.a2dp.A2dpService;
+import com.android.bluetooth.btservice.storage.DatabaseManager;
 import com.android.bluetooth.hearingaid.HearingAidService;
 import com.android.bluetooth.hfp.HeadsetService;
 import com.android.bluetooth.hid.HidHostService;
@@ -45,6 +46,7 @@ import com.android.internal.util.ArrayUtils;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 
 // Describes the phone policy
 //
@@ -86,6 +88,7 @@ class PhonePolicy {
     // Timeouts
     @VisibleForTesting static int sConnectOtherProfilesTimeoutMillis = 6000; // 6s
 
+    private DatabaseManager mDatabaseManager;
     private final AdapterService mAdapterService;
     private final ServiceFactory mFactory;
     private final Handler mHandler;
@@ -242,6 +245,8 @@ class PhonePolicy {
 
     PhonePolicy(AdapterService service, ServiceFactory factory) {
         mAdapterService = service;
+        mDatabaseManager = Objects.requireNonNull(mAdapterService.getDatabase(),
+                "DatabaseManager cannot be null when PhonePolicy starts");
         mFactory = factory;
         mHandler = new PhonePolicyHandler(service.getMainLooper());
     }
@@ -261,7 +266,8 @@ class PhonePolicy {
                 || ArrayUtils.contains(uuids, BluetoothUuid.HOGP)) && (
                 hidService.getConnectionPolicy(device)
                         == BluetoothProfile.CONNECTION_POLICY_UNKNOWN)) {
-            hidService.setConnectionPolicy(device, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
+            mAdapterService.getDatabase().setProfileConnectionPolicy(device,
+                    BluetoothProfile.HID_HOST, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
         }
 
         // If we do not have a stored priority for HFP/A2DP (all roles) then default to on.
@@ -269,14 +275,16 @@ class PhonePolicy {
                 || ArrayUtils.contains(uuids, BluetoothUuid.HFP)) && (
                 headsetService.getConnectionPolicy(device)
                         == BluetoothProfile.CONNECTION_POLICY_UNKNOWN))) {
-            headsetService.setConnectionPolicy(device, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
+            mAdapterService.getDatabase().setProfileConnectionPolicy(device,
+                    BluetoothProfile.HEADSET, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
         }
 
         if ((a2dpService != null) && (ArrayUtils.contains(uuids, BluetoothUuid.A2DP_SINK)
                 || ArrayUtils.contains(uuids, BluetoothUuid.ADV_AUDIO_DIST)) && (
                 a2dpService.getConnectionPolicy(device)
                         == BluetoothProfile.CONNECTION_POLICY_UNKNOWN)) {
-            a2dpService.setConnectionPolicy(device, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
+            mAdapterService.getDatabase().setProfileConnectionPolicy(device,
+                    BluetoothProfile.A2DP, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
         }
 
         if ((panService != null) && (ArrayUtils.contains(uuids, BluetoothUuid.PANU) && (
@@ -284,15 +292,16 @@ class PhonePolicy {
                         == BluetoothProfile.CONNECTION_POLICY_UNKNOWN)
                 && mAdapterService.getResources()
                 .getBoolean(R.bool.config_bluetooth_pan_enable_autoconnect))) {
-            panService.setConnectionPolicy(device, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
+            mAdapterService.getDatabase().setProfileConnectionPolicy(device,
+                    BluetoothProfile.PAN, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
         }
 
         if ((hearingAidService != null) && ArrayUtils.contains(uuids,
                 BluetoothUuid.HEARING_AID) && (hearingAidService.getConnectionPolicy(device)
                 == BluetoothProfile.CONNECTION_POLICY_UNKNOWN)) {
             debugLog("setting hearing aid profile priority for device " + device);
-            hearingAidService.setConnectionPolicy(device,
-                    BluetoothProfile.CONNECTION_POLICY_ALLOWED);
+            mAdapterService.getDatabase().setProfileConnectionPolicy(device,
+                    BluetoothProfile.HEARING_AID, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
         }
     }
 
@@ -314,7 +323,7 @@ class PhonePolicy {
             }
             if (nextState == BluetoothProfile.STATE_DISCONNECTED) {
                 if (profileId == BluetoothProfile.A2DP) {
-                    mAdapterService.getDatabase().setDisconnection(device);
+                    mDatabaseManager.setDisconnection(device);
                 }
                 handleAllProfilesDisconnected(device);
             }
@@ -331,13 +340,13 @@ class PhonePolicy {
         debugLog("processActiveDeviceChanged, device=" + device + ", profile=" + profileId);
 
         if (device != null) {
-            mAdapterService.getDatabase().setConnection(device, profileId == BluetoothProfile.A2DP);
+            mDatabaseManager.setConnection(device, profileId == BluetoothProfile.A2DP);
         }
     }
 
     private void processDeviceConnected(BluetoothDevice device) {
         debugLog("processDeviceConnected, device=" + device);
-        mAdapterService.getDatabase().setConnection(device, false);
+        mDatabaseManager.setConnection(device, false);
     }
 
     private boolean handleAllProfilesDisconnected(BluetoothDevice device) {
@@ -393,7 +402,7 @@ class PhonePolicy {
         if (!mAdapterService.isQuietModeEnabled()) {
             debugLog("autoConnect: Initiate auto connection on BT on...");
             final BluetoothDevice mostRecentlyActiveA2dpDevice =
-                    mAdapterService.getDatabase().getMostRecentlyConnectedA2dpDevice();
+                    mDatabaseManager.getMostRecentlyConnectedA2dpDevice();
             if (mostRecentlyActiveA2dpDevice == null) {
                 errorLog("autoConnect: most recently active a2dp device is null");
                 return;
