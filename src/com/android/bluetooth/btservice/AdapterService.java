@@ -204,7 +204,6 @@ public class AdapterService extends Service {
     private static AdapterService sAdapterService;
 
     public static synchronized AdapterService getAdapterService() {
-        Log.d(TAG, "getAdapterService() - returning " + sAdapterService);
         return sAdapterService;
     }
 
@@ -1600,15 +1599,6 @@ public class AdapterService extends Service {
                 return;
             }
             enforceBluetoothPrivilegedPermission(service);
-            if (transport == BluetoothDevice.TRANSPORT_LE) {
-                // TODO(184377951): LE isn't yet supported, coming soon
-                try {
-                    callback.onError(BluetoothAdapter.OOB_ERROR_UNKNOWN);
-                } catch (RemoteException e) {
-                    Log.e(TAG, "Failed to call callback");
-                }
-                return;
-            }
             service.generateLocalOobData(transport, callback);
         }
 

@@ -44,6 +44,7 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.bluetooth.hfp.BluetoothHeadsetProxy;
+import com.android.bluetooth.hfp.HeadsetService;
 
 import androidx.annotation.VisibleForTesting;
 
@@ -346,6 +347,13 @@ public class BluetoothInCallService extends InCallService {
             BluetoothCall call = mCallInfo.getForegroundCall();
             if (mCallInfo.isNullCall(call)) {
                 return false;
+            }
+            // release the parent if there is a conference call
+            BluetoothCall conferenceCall = getBluetoothCallById(call.getParentId());
+            if (!mCallInfo.isNullCall(conferenceCall)
+                    && conferenceCall.getState() == Call.STATE_ACTIVE) {
+                Log.i(TAG, "BT - hanging up conference call");
+                call = conferenceCall;
             }
             call.disconnect();
             return true;
@@ -650,7 +658,14 @@ public class BluetoothInCallService extends InCallService {
                             + addressType);
         }
 
-        if (mBluetoothHeadset != null) {
+        if (mBluetoothHeadset == null) {
+            Log.w(TAG, "mBluetoothHeasdset is null when sending clcc for BluetoothCall "
+                    + index + ", "
+                    + direction + ", "
+                    + state + ", "
+                    + isPartOfConference + ", "
+                    + addressType);
+        } else {
             mBluetoothHeadset.clccResponse(
                     index, direction, state, 0, isPartOfConference, address, addressType);
         }
