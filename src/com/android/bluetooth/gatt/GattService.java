@@ -80,6 +80,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -147,6 +148,14 @@ public class GattService extends ProfileService {
         }
     }
 
+    private final PendingIntent.CancelListener mScanIntentCancelListener =
+            new PendingIntent.CancelListener(){
+                public void onCancelled(PendingIntent intent) {
+                    Log.d(TAG, "scanning PendingIntent cancelled");
+                    stopScan(intent);
+                }
+            };
+
     /**
      * List of our registered scanners.
      */
@@ -203,6 +212,12 @@ public class GattService extends ProfileService {
      * Reliable write queue
      */
     private Set<String> mReliableQueue = new HashSet<String>();
+
+    /**
+     * HashMap used to synchronize writeCharacteristic calls mapping remote device address to
+     * available permit (either 1 or 0).
+     */
+    private final HashMap<String, AtomicBoolean> mPermits = new HashMap<>();
 
     static {
         classInitNative();
@@ -515,7 +530,7 @@ public class GattService extends ProfileService {
             if (service == null) {
                 return;
             }
-            service.stopScan(intent, callingPackage);
+            service.stopScan(intent);
         }
 
         @Override
@@ -622,13 +637,14 @@ public class GattService extends ProfileService {
         }
 
         @Override
-        public void writeCharacteristic(int clientIf, String address, int handle, int writeType,
+        public int writeCharacteristic(int clientIf, String address, int handle, int writeType,
                 int authReq, byte[] value) {
             GattService service = getService();
             if (service == null) {
-                return;
+                return BluetoothGatt.GATT_WRITE_REQUEST_FAIL;
             }
-            service.writeCharacteristic(clientIf, address, handle, writeType, authReq, value);
+            return service.writeCharacteristic(clientIf, address, handle, writeType, authReq,
+                value);
         }
 
         @Override
@@ -1215,6 +1231,13 @@ public class GattService extends ProfileService {
 
         if (status == 0) {
             mClientMap.addConnection(clientIf, connId, address);
+
+            // Allow one writeCharacteristic operation at a time for each connected remote device.
+            synchronized (mPermits) {
+                Log.d(TAG, "onConnected() - adding permit for address="
+                    + address);
+                mPermits.putIfAbsent(address, new AtomicBoolean(true));
+            }
         }
         ClientMap.App app = mClientMap.getById(clientIf);
         if (app != null) {
@@ -1233,6 +1256,17 @@ public class GattService extends ProfileService {
 
         mClientMap.removeConnection(clientIf, connId);
         ClientMap.App app = mClientMap.getById(clientIf);
+
+        // Remove AtomicBoolean representing permit if no other connections rely on
+        // this remote device.
+        if (!mClientMap.getConnectedDevices().contains(address)) {
+            synchronized (mPermits) {
+                Log.d(TAG, "onDisconnected() - removing permit for address="
+                    + address);
+                mPermits.remove(address);
+            }
+        }
+
         if (app != null) {
             app.callback.onClientConnectionState(status, clientIf, false, address);
         }
@@ -1524,6 +1558,11 @@ public class GattService extends ProfileService {
 
     void onWriteCharacteristic(int connId, int status, int handle) throws RemoteException {
         String address = mClientMap.addressByConnId(connId);
+        synchronized (mPermits) {
+            Log.d(TAG, "onWriteCharacteristic() - increasing permit for address="
+                    + address);
+            mPermits.get(address).set(true);
+        }
 
         if (VDBG) {
             Log.d(TAG, "onWriteCharacteristic() - address=" + address + ", status=" + status);
@@ -2102,7 +2141,7 @@ public class GattService extends ProfileService {
         if (DBG) {
             Log.d(TAG, "start scan with filters");
         }
-        UserHandle callingUser = UserHandle.of(UserHandle.getCallingUserId());
+
         enforceAdminPermission();
         if (needsPrivilegedPermissionForScan(settings)) {
             enforcePrivilegedPermission();
@@ -2110,7 +2149,7 @@ public class GattService extends ProfileService {
         settings = enforceReportDelayFloor(settings);
         enforcePrivilegedPermissionIfNeeded(filters);
         final ScanClient scanClient = new ScanClient(scannerId, settings, filters, storages);
-        scanClient.userHandle = UserHandle.of(UserHandle.getCallingUserId());
+        scanClient.userHandle = Binder.getCallingUserHandle();
         mAppOps.checkPackage(Binder.getCallingUid(), callingPackage);
         scanClient.eligibleForSanitizedExposureNotification =
                 callingPackage.equals(mExposureNotificationPackage);
@@ -2174,7 +2213,10 @@ public class GattService extends ProfileService {
         }
 
         ScannerMap.App app = mScannerMap.add(uuid, null, null, piInfo, this);
-        app.mUserHandle = UserHandle.of(UserHandle.getCallingUserId());
+
+        pendingIntent.registerCancelListener(mScanIntentCancelListener);
+
+        app.mUserHandle = UserHandle.getUserHandleForUid(Binder.getCallingUid());
         mAppOps.checkPackage(Binder.getCallingUid(), callingPackage);
         app.mEligibleForSanitizedExposureNotification =
                 callingPackage.equals(mExposureNotificationPackage);
@@ -2250,7 +2292,7 @@ public class GattService extends ProfileService {
         mScanManager.stopScan(scannerId);
     }
 
-    void stopScan(PendingIntent intent, String callingPackage) {
+    void stopScan(PendingIntent intent) {
         enforceAdminPermission();
         PendingIntentInfo pii = new PendingIntentInfo();
         pii.intent = intent;
@@ -2259,6 +2301,7 @@ public class GattService extends ProfileService {
             Log.d(TAG, "stopScan(PendingIntent): app found = " + app);
         }
         if (app != null) {
+            intent.unregisterCancelListener(mScanIntentCancelListener);
             final int scannerId = app.id;
             stopScan(scannerId);
             // Also unregister the scanner
@@ -2545,7 +2588,7 @@ public class GattService extends ProfileService {
                 uuid.getMostSignificantBits(), startHandle, endHandle, authReq);
     }
 
-    void writeCharacteristic(int clientIf, String address, int handle, int writeType, int authReq,
+    int writeCharacteristic(int clientIf, String address, int handle, int writeType, int authReq,
             byte[] value) {
         enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
 
@@ -2560,15 +2603,33 @@ public class GattService extends ProfileService {
         Integer connId = mClientMap.connIdByAddress(clientIf, address);
         if (connId == null) {
             Log.e(TAG, "writeCharacteristic() - No connection for " + address + "...");
-            return;
+            return BluetoothGatt.GATT_WRITE_REQUEST_FAIL;
         }
 
         if (!permissionCheck(connId, handle)) {
             Log.w(TAG, "writeCharacteristic() - permission check failed!");
-            return;
+            return BluetoothGatt.GATT_WRITE_REQUEST_FAIL;
+        }
+
+        Log.d(TAG, "writeCharacteristic() - trying to acquire permit.");
+        // Lock the thread until onCharacteristicWrite callback comes back.
+        synchronized (mPermits) {
+            AtomicBoolean atomicBoolean = mPermits.get(address);
+            if (atomicBoolean == null) {
+                Log.d(TAG, "writeCharacteristic() -  atomicBoolean uninitialized!");
+                return BluetoothGatt.GATT_WRITE_REQUEST_FAIL;
+            }
+
+            boolean success = atomicBoolean.get();
+            if (!success) {
+                 Log.d(TAG, "writeCharacteristic() - no permit available.");
+                 return BluetoothGatt.GATT_WRITE_REQUEST_BUSY;
+            }
+            atomicBoolean.set(false);
         }
 
         gattClientWriteCharacteristicNative(connId, handle, writeType, authReq, value);
+        return BluetoothGatt.GATT_WRITE_REQUEST_SUCCESS;
     }
 
     void readDescriptor(int clientIf, String address, int handle, int authReq) {
