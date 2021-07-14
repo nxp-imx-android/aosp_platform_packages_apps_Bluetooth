@@ -18,6 +18,7 @@ package com.android.bluetooth.hfpclient.connserv;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothHeadsetClient;
 import android.bluetooth.BluetoothHeadsetClientCall;
+import android.bluetooth.hfpclient.connserv.BluetoothHeadsetClientProxy;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
@@ -33,14 +34,13 @@ public class HfpClientConnection extends Connection {
     private static final String TAG = "HfpClientConnection";
     private static final boolean DBG = false;
 
-    private static final String KEY_SCO_STATE = "com.android.bluetooth.hfpclient.SCO_STATE";
     private static final String EVENT_SCO_CONNECT = "com.android.bluetooth.hfpclient.SCO_CONNECT";
     private static final String EVENT_SCO_DISCONNECT =
              "com.android.bluetooth.hfpclient.SCO_DISCONNECT";
 
     private final Context mContext;
     private final BluetoothDevice mDevice;
-    private BluetoothHeadsetClient mHeadsetProfile;
+    private BluetoothHeadsetClientProxy mHeadsetProfile;
     private HfpClientConnectionService mHfpClientConnectionService;
 
     private BluetoothHeadsetClientCall mCurrentCall;
@@ -54,7 +54,7 @@ public class HfpClientConnection extends Connection {
     // Constructor to be used when there's an existing call (such as that created on the AG or
     // when connection happens and we see calls for the first time).
     public HfpClientConnection(Context context, BluetoothDevice device,
-            BluetoothHeadsetClient client, BluetoothHeadsetClientCall call) {
+            BluetoothHeadsetClientProxy client, BluetoothHeadsetClientCall call) {
         mDevice = device;
         mContext = context;
         mHeadsetProfile = client;
@@ -64,7 +64,6 @@ public class HfpClientConnection extends Connection {
         }
 
         mCurrentCall = call;
-        setScoState(BluetoothHeadsetClient.STATE_AUDIO_DISCONNECTED);
         handleCallChanged();
         finishInitializing();
     }
@@ -72,7 +71,7 @@ public class HfpClientConnection extends Connection {
     // Constructor to be used when a call is intiated on the HF. The call handle is obtained by
     // using the dial() command.
     public HfpClientConnection(Context context, BluetoothDevice device,
-            BluetoothHeadsetClient client, Uri number) {
+            BluetoothHeadsetClientProxy client, Uri number) {
         mDevice = device;
         mContext = context;
         mHeadsetProfile = client;
@@ -297,19 +296,6 @@ public class HfpClientConnection extends Connection {
                 mHeadsetProfile.disconnectAudio(mDevice);
                 break;
         }
-    }
-
-    /**
-     * Notify this connection of changes in the SCO state so we can update our call details
-     */
-    public void onScoStateChanged(int newState, int oldState) {
-        setScoState(newState);
-    }
-
-    private void setScoState(int state) {
-        Bundle bundle = new Bundle();
-        bundle.putInt(KEY_SCO_STATE, state);
-        setExtras(bundle);
     }
 
     @Override
