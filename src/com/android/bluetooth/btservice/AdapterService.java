@@ -58,6 +58,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.BatteryStats;
+import android.os.BatteryStatsManager;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
@@ -69,7 +70,6 @@ import android.os.PowerManager;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.os.ResultReceiver;
-import android.os.ServiceManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
@@ -105,10 +105,9 @@ import com.android.bluetooth.pbapclient.PbapClientService;
 import com.android.bluetooth.sap.SapService;
 import com.android.bluetooth.sdp.SdpManager;
 import com.android.bluetooth.telephony.BluetoothInCallService;
+import com.android.bluetooth.vc.VolumeControlService;
 import com.android.internal.R;
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.internal.app.IBatteryStats;
-import com.android.internal.util.ArrayUtils;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 
@@ -243,7 +242,7 @@ public class AdapterService extends Service {
 
     private AlarmManager mAlarmManager;
     private PendingIntent mPendingAlarm;
-    private IBatteryStats mBatteryStats;
+    private BatteryStatsManager mBatteryStatsManager;
     private PowerManager mPowerManager;
     private PowerManager.WakeLock mWakeLock;
     private String mWakeLockName;
@@ -272,6 +271,7 @@ public class AdapterService extends Service {
     private PbapClientService mPbapClientService;
     private HearingAidService mHearingAidService;
     private SapService mSapService;
+    private VolumeControlService mVolumeControlService;
 
     /**
      * Register a {@link ProfileService} with AdapterService.
@@ -489,8 +489,9 @@ public class AdapterService extends Service {
         // Android TV doesn't show consent dialogs for just works and encryption only le pairing
         boolean isAtvDevice = getApplicationContext().getPackageManager().hasSystemFeature(
                 PackageManager.FEATURE_LEANBACK_ONLY);
-        initNative(isGuest(), isCommonCriteriaMode(), configCompareResult, getInitFlags(),
-                isAtvDevice);
+        mUserManager = getSystemService(UserManager.class);
+        initNative(mUserManager.isGuestUser(), isCommonCriteriaMode(), configCompareResult,
+                getInitFlags(), isAtvDevice);
         mNativeAvailable = true;
         mCallbacks = new RemoteCallbackList<IBluetoothCallback>();
         mAppOps = getSystemService(AppOpsManager.class);
@@ -498,11 +499,9 @@ public class AdapterService extends Service {
         getAdapterPropertyNative(AbstractionLayer.BT_PROPERTY_BDADDR);
         getAdapterPropertyNative(AbstractionLayer.BT_PROPERTY_BDNAME);
         getAdapterPropertyNative(AbstractionLayer.BT_PROPERTY_CLASS_OF_DEVICE);
-        mAlarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        mPowerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        mUserManager = (UserManager) getSystemService(Context.USER_SERVICE);
-        mBatteryStats = IBatteryStats.Stub.asInterface(
-                ServiceManager.getService(BatteryStats.SERVICE_NAME));
+        mAlarmManager = getSystemService(AlarmManager.class);
+        mPowerManager = getSystemService(PowerManager.class);
+        mBatteryStatsManager = getSystemService(BatteryStatsManager.class);
 
         mBluetoothKeystoreService.initJni();
 
@@ -626,11 +625,7 @@ public class AdapterService extends Service {
 
         mJniCallbacks.init(mBondStateMachine, mRemoteDevices);
 
-        try {
-            mBatteryStats.noteResetBleScan();
-        } catch (RemoteException e) {
-            Log.w(TAG, "RemoteException trying to send a reset to BatteryStats");
-        }
+        mBatteryStatsManager.reportBleScanReset();
         BluetoothStatsLog.write_non_chained(BluetoothStatsLog.BLE_SCAN_STATE_CHANGED, -1, null,
                 BluetoothStatsLog.BLE_SCAN_STATE_CHANGED__STATE__RESET, false, false, false);
 
@@ -927,36 +922,36 @@ public class AdapterService extends Service {
         }
 
         if (profile == BluetoothProfile.HEADSET) {
-            return (ArrayUtils.contains(localDeviceUuids, BluetoothUuid.HSP_AG)
-                    && ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.HSP))
-                    || (ArrayUtils.contains(localDeviceUuids, BluetoothUuid.HFP_AG)
-                    && ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.HFP));
+            return (Utils.arrayContains(localDeviceUuids, BluetoothUuid.HSP_AG)
+                    && Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.HSP))
+                    || (Utils.arrayContains(localDeviceUuids, BluetoothUuid.HFP_AG)
+                    && Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.HFP));
         }
         if (profile == BluetoothProfile.HEADSET_CLIENT) {
-            return ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.HFP_AG)
-                    && ArrayUtils.contains(localDeviceUuids, BluetoothUuid.HFP);
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.HFP_AG)
+                    && Utils.arrayContains(localDeviceUuids, BluetoothUuid.HFP);
         }
         if (profile == BluetoothProfile.A2DP) {
-            return ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.ADV_AUDIO_DIST)
-                    || ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.A2DP_SINK);
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.ADV_AUDIO_DIST)
+                    || Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.A2DP_SINK);
         }
         if (profile == BluetoothProfile.A2DP_SINK) {
-            return ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.ADV_AUDIO_DIST)
-                    || ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.A2DP_SOURCE);
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.ADV_AUDIO_DIST)
+                    || Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.A2DP_SOURCE);
         }
         if (profile == BluetoothProfile.OPP) {
-            return ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.OBEX_OBJECT_PUSH);
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.OBEX_OBJECT_PUSH);
         }
         if (profile == BluetoothProfile.HID_HOST) {
-            return ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.HID)
-                    || ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.HOGP);
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.HID)
+                    || Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.HOGP);
         }
         if (profile == BluetoothProfile.HID_DEVICE) {
             return mHidDeviceService.getConnectionState(device)
                     == BluetoothProfile.STATE_DISCONNECTED;
         }
         if (profile == BluetoothProfile.PAN) {
-            return ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.NAP);
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.NAP);
         }
         if (profile == BluetoothProfile.MAP) {
             return mMapService.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED;
@@ -968,14 +963,17 @@ public class AdapterService extends Service {
             return true;
         }
         if (profile == BluetoothProfile.PBAP_CLIENT) {
-            return ArrayUtils.contains(localDeviceUuids, BluetoothUuid.PBAP_PCE)
-                    && ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.PBAP_PSE);
+            return Utils.arrayContains(localDeviceUuids, BluetoothUuid.PBAP_PCE)
+                    && Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.PBAP_PSE);
         }
         if (profile == BluetoothProfile.HEARING_AID) {
-            return ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.HEARING_AID);
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.HEARING_AID);
         }
         if (profile == BluetoothProfile.SAP) {
-            return ArrayUtils.contains(remoteDeviceUuids, BluetoothUuid.SAP);
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.SAP);
+        }
+        if (profile == BluetoothProfile.VOLUME_CONTROL) {
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.VOLUME_CONTROL);
         }
 
         Log.e(TAG, "isSupported: Unexpected profile passed in to function: " + profile);
@@ -1023,6 +1021,10 @@ public class AdapterService extends Service {
             return true;
         }
         if (mHearingAidService != null && mHearingAidService.getConnectionPolicy(device)
+                > BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+            return true;
+        }
+        if (mVolumeControlService != null && mVolumeControlService.getConnectionPolicy(device)
                 > BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
             return true;
         }
@@ -1099,6 +1101,13 @@ public class AdapterService extends Service {
             Log.i(TAG, "connectEnabledProfiles: Connecting Hearing Aid Profile");
             mHearingAidService.connect(device);
         }
+        if (mVolumeControlService != null && isSupported(localDeviceUuids, remoteDeviceUuids,
+                BluetoothProfile.VOLUME_CONTROL, device)
+                && mVolumeControlService.getConnectionPolicy(device)
+                > BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+            Log.i(TAG, "connectEnabledProfiles: Connecting Volume Control Profile");
+            mVolumeControlService.connect(device);
+        }
 
         return true;
     }
@@ -1136,6 +1145,7 @@ public class AdapterService extends Service {
         mPbapClientService = PbapClientService.getPbapClientService();
         mHearingAidService = HearingAidService.getHearingAidService();
         mSapService = SapService.getSapService();
+        mVolumeControlService = VolumeControlService.getVolumeControlService();
     }
 
     private boolean isAvailable() {
@@ -2332,7 +2342,8 @@ public class AdapterService extends Service {
 
     public synchronized boolean enable(boolean quietMode) {
         // Enforce the user restriction for disallowing Bluetooth if it was set.
-        if (mUserManager.hasUserRestriction(UserManager.DISALLOW_BLUETOOTH, UserHandle.SYSTEM)) {
+        if (mUserManager.hasUserRestrictionForUser(UserManager.DISALLOW_BLUETOOTH,
+                    UserHandle.SYSTEM)) {
             debugLog("enable() called when Bluetooth was disallowed");
             return false;
         }
@@ -2373,7 +2384,7 @@ public class AdapterService extends Service {
     }
 
     boolean startDiscovery(String callingPackage, @Nullable String callingFeatureId) {
-        UserHandle callingUser = UserHandle.of(UserHandle.getCallingUserId());
+        UserHandle callingUser = Binder.getCallingUserHandle();
         debugLog("startDiscovery");
         mAppOps.checkPackage(Binder.getCallingUid(), callingPackage);
         boolean isQApp = Utils.isQApp(this, callingPackage);
@@ -2696,6 +2707,13 @@ public class AdapterService extends Service {
                     BluetoothProfile.CONNECTION_POLICY_ALLOWED);
             numProfilesConnected++;
         }
+        if (mVolumeControlService != null && isSupported(localDeviceUuids, remoteDeviceUuids,
+                BluetoothProfile.VOLUME_CONTROL, device)) {
+            Log.i(TAG, "connectAllEnabledProfiles: Connecting Volume Control Profile");
+            mVolumeControlService.setConnectionPolicy(device,
+                    BluetoothProfile.CONNECTION_POLICY_ALLOWED);
+            numProfilesConnected++;
+        }
 
         Log.i(TAG, "connectAllEnabledProfiles: Number of Profiles Connected: "
                 + numProfilesConnected);
@@ -2775,6 +2793,11 @@ public class AdapterService extends Service {
                 == BluetoothProfile.STATE_CONNECTED) {
             Log.i(TAG, "disconnectAllEnabledProfiles: Disconnecting Hearing Aid Profile");
             mHearingAidService.disconnect(device);
+        }
+        if (mVolumeControlService != null && mVolumeControlService.getConnectionState(device)
+                == BluetoothProfile.STATE_CONNECTED) {
+            Log.i(TAG, "disconnectAllEnabledProfiles: Disconnecting Volume Control Profile");
+            mVolumeControlService.disconnect(device);
         }
         if (mSapService != null && mSapService.getConnectionState(device)
                 == BluetoothProfile.STATE_CONNECTED) {
@@ -3336,13 +3359,8 @@ public class AdapterService extends Service {
         }
     };
 
-    private boolean isGuest() {
-        return UserManager.get(this).isGuestUser();
-    }
-
     private boolean isCommonCriteriaMode() {
-        return ((DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE))
-                .isCommonCriteriaModeEnabled(null);
+        return getSystemService(DevicePolicyManager.class).isCommonCriteriaModeEnabled(null);
     }
 
     // Boolean flags

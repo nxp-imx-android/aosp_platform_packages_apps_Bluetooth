@@ -41,13 +41,16 @@ import com.android.bluetooth.hfp.HeadsetService;
 import com.android.bluetooth.hfpclient.HeadsetClientService;
 import com.android.bluetooth.hid.HidDeviceService;
 import com.android.bluetooth.hid.HidHostService;
+import com.android.bluetooth.le_audio.LeAudioService;
 import com.android.bluetooth.map.BluetoothMapService;
 import com.android.bluetooth.mapclient.MapClientService;
+import com.android.bluetooth.mcp.McpService;
 import com.android.bluetooth.opp.BluetoothOppService;
 import com.android.bluetooth.pan.PanService;
 import com.android.bluetooth.pbap.BluetoothPbapService;
 import com.android.bluetooth.pbapclient.PbapClientService;
 import com.android.bluetooth.sap.SapService;
+import com.android.bluetooth.vc.VolumeControlService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -104,6 +107,12 @@ public class Config {
                     (1 << BluetoothProfile.OPP)),
             new ProfileConfig(BluetoothPbapService.class, R.bool.profile_supported_pbap,
                     (1 << BluetoothProfile.PBAP)),
+            new ProfileConfig(LeAudioService.class, R.bool.profile_supported_le_audio,
+                    (1 << BluetoothProfile.LE_AUDIO)),
+            new ProfileConfig(VolumeControlService.class, R.bool.profile_supported_vc,
+                    (1 << BluetoothProfile.VOLUME_CONTROL)),
+            new ProfileConfig(McpService.class, R.bool.profile_supported_mcp_server,
+                    (1 << BluetoothProfile.MCP_SERVER)),
             new ProfileConfig(HearingAidService.class,
                     com.android.internal.R.bool.config_hearing_aid_profile_supported,
                     (1 << BluetoothProfile.HEARING_AID))

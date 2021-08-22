@@ -20,18 +20,22 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothHeadset;
-import com.android.bluetooth.telephony.BluetoothInCallService;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.PowerManager;
+import android.telecom.PhoneAccount;
+import android.telecom.PhoneAccountHandle;
+import android.telecom.TelecomManager;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
+import com.android.bluetooth.telephony.BluetoothInCallService;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.List;
@@ -49,19 +53,22 @@ public class HeadsetSystemInterface {
     private final AudioManager mAudioManager;
     private final HeadsetPhoneState mHeadsetPhoneState;
     private PowerManager.WakeLock mVoiceRecognitionWakeLock;
+    private final TelephonyManager mTelephonyManager;
+    private final TelecomManager mTelecomManager;
 
     HeadsetSystemInterface(HeadsetService headsetService) {
         if (headsetService == null) {
             Log.wtf(TAG, "HeadsetService parameter is null");
         }
         mHeadsetService = headsetService;
-        mAudioManager = (AudioManager) mHeadsetService.getSystemService(Context.AUDIO_SERVICE);
-        PowerManager powerManager =
-                (PowerManager) mHeadsetService.getSystemService(Context.POWER_SERVICE);
+        mAudioManager = mHeadsetService.getSystemService(AudioManager.class);
+        PowerManager powerManager = mHeadsetService.getSystemService(PowerManager.class);
         mVoiceRecognitionWakeLock =
                 powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG + ":VoiceRecognition");
         mVoiceRecognitionWakeLock.setReferenceCounted(false);
         mHeadsetPhoneState = new com.android.bluetooth.hfp.HeadsetPhoneState(mHeadsetService);
+        mTelephonyManager = mHeadsetService.getSystemService(TelephonyManager.class);
+        mTelecomManager = mHeadsetService.getSystemService(TelecomManager.class);
     }
 
     private BluetoothInCallService getBluetoothInCallServiceInstance() {
@@ -238,6 +245,41 @@ public class HeadsetSystemInterface {
     }
 
     /**
+     * Get the phone number of this device without incall service
+     *
+     * @return emptry if unavailable
+     */
+    private String getNumberWithoutInCallService() {
+        PhoneAccount account = null;
+        String address = "";
+
+        // Get the label for the default Phone Account.
+        List<PhoneAccountHandle> handles =
+                mTelecomManager.getPhoneAccountsSupportingScheme(PhoneAccount.SCHEME_TEL);
+        while (handles.iterator().hasNext()) {
+            account = mTelecomManager.getPhoneAccount(handles.iterator().next());
+            break;
+        }
+
+        if (account != null) {
+            Uri addressUri = account.getAddress();
+
+            if (addressUri != null) {
+                address = addressUri.getSchemeSpecificPart();
+            }
+        }
+
+        if (address.isEmpty()) {
+            address = mTelephonyManager.getLine1Number();
+            if (address == null) address = "";
+        }
+
+        Log.i(TAG, String.format("get phone number -> '%s'", address));
+
+        return address;
+    }
+
+    /**
      * Get the phone number of this device
      *
      * @return null if unavailable
@@ -247,7 +289,8 @@ public class HeadsetSystemInterface {
         BluetoothInCallService bluetoothInCallService = getBluetoothInCallServiceInstance();
         if (bluetoothInCallService == null) {
             Log.e(TAG, "getSubscriberNumber() failed: mBluetoothInCallService is null");
-            return null;
+            Log.i(TAG, "Try to get phone number without mBluetoothInCallService.");
+            return getNumberWithoutInCallService();
         }
         return bluetoothInCallService.getSubscriberNumber();
     }

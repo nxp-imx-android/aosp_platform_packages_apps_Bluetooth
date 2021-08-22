@@ -205,7 +205,7 @@ public class AvrcpTargetService extends ProfileService {
             return true;
         }
 
-        mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        mAudioManager = getSystemService(AudioManager.class);
         sDeviceMaxVolume = mAudioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
 
         mMediaPlayerList = new MediaPlayerList(Looper.myLooper(), this);
@@ -217,7 +217,7 @@ public class AvrcpTargetService extends ProfileService {
 
         mVolumeManager = new AvrcpVolumeManager(this, mAudioManager, mNativeInterface);
 
-        UserManager userManager = UserManager.get(getApplicationContext());
+        UserManager userManager = getApplicationContext().getSystemService(UserManager.class);
         if (userManager.isUserUnlocked()) {
             mMediaPlayerList.init(new ListCallback());
         }
@@ -389,12 +389,27 @@ public class AvrcpTargetService extends ProfileService {
     }
 
     List<Metadata> getNowPlayingList() {
+        String currentMediaId = getCurrentMediaId();
+        Metadata currentTrack = null;
+        String imageHandle = null;
         List<Metadata> nowPlayingList = mMediaPlayerList.getNowPlayingList();
         if (mAvrcpCoverArtService != null) {
             for (Metadata metadata : nowPlayingList) {
-                if (metadata.image != null) {
-                    String imageHandle = mAvrcpCoverArtService.storeImage(metadata.image);
-                    if (imageHandle != null) metadata.image.setImageHandle(imageHandle);
+                if (metadata.mediaId == currentMediaId) {
+                    currentTrack = metadata;
+                } else if (metadata.image != null) {
+                    imageHandle = mAvrcpCoverArtService.storeImage(metadata.image);
+                    if (imageHandle != null) {
+                        metadata.image.setImageHandle(imageHandle);
+                    }
+                }
+            }
+
+            // Always store the current item from the queue last so we know the image is in storage
+            if (currentTrack != null) {
+                imageHandle = mAvrcpCoverArtService.storeImage(currentTrack.image);
+                if (imageHandle != null) {
+                    currentTrack.image.setImageHandle(imageHandle);
                 }
             }
         }

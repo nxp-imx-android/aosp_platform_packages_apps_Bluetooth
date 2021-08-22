@@ -32,6 +32,9 @@
     <bool name="profile_supported_pbapclient">false</bool>
     <bool name="profile_supported_mapmce">false</bool>
     <bool name="profile_supported_hid_device">true</bool>
+    <bool name="profile_supported_le_audio">true</bool>
+    <bool name="profile_supported_vc">true</bool>
+    <bool name="profile_supported_mcp_server">true</bool>
 
     <!-- If true, we will require location to be enabled on the device to
          fire Bluetooth LE scan result callbacks in addition to having one
@@ -105,6 +108,9 @@
     <!-- For enabling the AVRCP Target Cover Artowrk feature-->
     <bool name="avrcp_target_enable_cover_art">true</bool>
 
+    <!-- Enable support for URI based images. Off by default due to increased memory usage -->
+    <bool name="avrcp_target_cover_art_uri_images">false</bool>
+
     <!-- Package that is responsible for user interaction on pairing request,
          success or cancel.
          Receives:
@@ -130,6 +136,6 @@
             - HAL interface layer
             - Other required GD components like config storage
      -->
-    <bool name="enable_gd_up_to_scanning_layer">false</bool>
+    <bool name="enable_gd_up_to_scanning_layer">true</bool>
 
 </resources>
