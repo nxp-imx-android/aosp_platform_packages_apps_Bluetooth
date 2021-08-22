@@ -589,7 +589,8 @@ void btgatts_connection_cb(int conn_id, int server_if, int connected,
 }
 
 void btgatts_service_added_cb(int status, int server_if,
-                              std::vector<btgatt_db_element_t> service) {
+                              const btgatt_db_element_t* service,
+                              size_t service_count) {
   CallbackEnv sCallbackEnv(__func__);
   if (!sCallbackEnv.valid()) return;
 
@@ -600,8 +601,7 @@ void btgatts_service_added_cb(int status, int server_if,
           arrayListclazz,
           sCallbackEnv->GetMethodID(arrayListclazz, "<init>", "()V")));
   jobject arrayPtr = array.get();
-  fillGattDbElementArray(sCallbackEnv.get(), &arrayPtr, service.data(),
-                         service.size());
+  fillGattDbElementArray(sCallbackEnv.get(), &arrayPtr, service, service_count);
 
   sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onServiceAdded, status,
                                server_if, array.get());
@@ -652,42 +652,39 @@ void btgatts_request_write_characteristic_cb(int conn_id, int trans_id,
                                              const RawAddress& bda,
                                              int attr_handle, int offset,
                                              bool need_rsp, bool is_prep,
-                                             std::vector<uint8_t> value) {
+                                             const uint8_t* value,
+                                             size_t length) {
   CallbackEnv sCallbackEnv(__func__);
   if (!sCallbackEnv.valid()) return;
 
   ScopedLocalRef<jstring> address(sCallbackEnv.get(),
                                   bdaddr2newjstr(sCallbackEnv.get(), &bda));
   ScopedLocalRef<jbyteArray> val(sCallbackEnv.get(),
-                                 sCallbackEnv->NewByteArray(value.size()));
+                                 sCallbackEnv->NewByteArray(length));
   if (val.get())
-    sCallbackEnv->SetByteArrayRegion(val.get(), 0, value.size(),
-                                     (jbyte*)value.data());
+    sCallbackEnv->SetByteArrayRegion(val.get(), 0, length, (jbyte*)value);
   sCallbackEnv->CallVoidMethod(
       mCallbacksObj, method_onServerWriteCharacteristic, address.get(), conn_id,
-      trans_id, attr_handle, offset, value.size(), need_rsp, is_prep,
-      val.get());
+      trans_id, attr_handle, offset, length, need_rsp, is_prep, val.get());
 }
 
 void btgatts_request_write_descriptor_cb(int conn_id, int trans_id,
                                          const RawAddress& bda, int attr_handle,
                                          int offset, bool need_rsp,
-                                         bool is_prep,
-                                         std::vector<uint8_t> value) {
+                                         bool is_prep, const uint8_t* value,
+                                         size_t length) {
   CallbackEnv sCallbackEnv(__func__);
   if (!sCallbackEnv.valid()) return;
 
   ScopedLocalRef<jstring> address(sCallbackEnv.get(),
                                   bdaddr2newjstr(sCallbackEnv.get(), &bda));
   ScopedLocalRef<jbyteArray> val(sCallbackEnv.get(),
-                                 sCallbackEnv->NewByteArray(value.size()));
+                                 sCallbackEnv->NewByteArray(length));
   if (val.get())
-    sCallbackEnv->SetByteArrayRegion(val.get(), 0, value.size(),
-                                     (jbyte*)value.data());
+    sCallbackEnv->SetByteArrayRegion(val.get(), 0, length, (jbyte*)value);
   sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onServerWriteDescriptor,
                                address.get(), conn_id, trans_id, attr_handle,
-                               offset, value.size(), need_rsp, is_prep,
-                               val.get());
+                               offset, length, need_rsp, is_prep, val.get());
 }
 
 void btgatts_request_exec_write_cb(int conn_id, int trans_id,
@@ -876,6 +873,13 @@ class JniScanningCallbacks : ScanningCallbacks {
     if (!sCallbackEnv.valid()) return;
     sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onScannerRegistered,
                                  status, scannerId, UUID_PARAMS(app_uuid));
+  }
+
+  void OnSetScannerParameterComplete(uint8_t scannerId, uint8_t status) {
+    CallbackEnv sCallbackEnv(__func__);
+    if (!sCallbackEnv.valid()) return;
+    sCallbackEnv->CallVoidMethod(
+        mCallbacksObj, method_onScanParamSetupCompleted, status, scannerId);
   }
 
   void OnScanResult(uint16_t event_type, uint8_t addr_type, RawAddress bda,
@@ -1306,11 +1310,11 @@ static void gattClientWriteCharacteristicNative(JNIEnv* env, jobject object,
   jbyte* p_value = env->GetByteArrayElements(value, NULL);
   if (p_value == NULL) return;
 
-  std::vector<uint8_t> vect_val(p_value, p_value + len);
-  env->ReleaseByteArrayElements(value, p_value, 0);
-
   sGattIf->client->write_characteristic(conn_id, handle, write_type, auth_req,
-                                        std::move(vect_val));
+                                        reinterpret_cast<uint8_t*>(p_value),
+                                        len);
+
+  env->ReleaseByteArrayElements(value, p_value, 0);
 }
 
 static void gattClientExecuteWriteNative(JNIEnv* env, jobject object,
@@ -1333,11 +1337,10 @@ static void gattClientWriteDescriptorNative(JNIEnv* env, jobject object,
   jbyte* p_value = env->GetByteArrayElements(value, NULL);
   if (p_value == NULL) return;
 
-  std::vector<uint8_t> vect_val(p_value, p_value + len);
-  env->ReleaseByteArrayElements(value, p_value, 0);
-
   sGattIf->client->write_descriptor(conn_id, handle, auth_req,
-                                    std::move(vect_val));
+                                    reinterpret_cast<uint8_t*>(p_value), len);
+
+  env->ReleaseByteArrayElements(value, p_value, 0);
 }
 
 static void gattClientRegisterForNotificationsNative(
@@ -1371,7 +1374,7 @@ static void gattSetScanParametersNative(JNIEnv* env, jobject object,
                                         jint scan_window_unit) {
   if (!sGattIf) return;
   sGattIf->scanner->SetScanParameters(
-      scan_interval_unit, scan_window_unit,
+      client_if, scan_interval_unit, scan_window_unit,
       base::Bind(&set_scan_params_cmpl_cb, client_if));
 }
 
@@ -1489,6 +1492,7 @@ static void gattClientScanFilterAddNative(JNIEnv* env, jobject object,
   jfieldID addressFid =
       env->GetFieldID(entryClazz, "address", "Ljava/lang/String;");
   jfieldID addrTypeFid = env->GetFieldID(entryClazz, "addr_type", "B");
+  jfieldID irkTypeFid = env->GetFieldID(entryClazz, "irk", "[B");
   jfieldID uuidFid = env->GetFieldID(entryClazz, "uuid", "Ljava/util/UUID;");
   jfieldID uuidMaskFid =
       env->GetFieldID(entryClazz, "uuid_mask", "Ljava/util/UUID;");
@@ -1499,7 +1503,7 @@ static void gattClientScanFilterAddNative(JNIEnv* env, jobject object,
   jfieldID dataMaskFid = env->GetFieldID(entryClazz, "data_mask", "[B");
 
   for (int i = 0; i < numFilters; ++i) {
-    ApcfCommand curr;
+    ApcfCommand curr{};
 
     ScopedLocalRef<jobject> current(env,
                                     env->GetObjectArrayElement(filters, i));
@@ -1513,6 +1517,25 @@ static void gattClientScanFilterAddNative(JNIEnv* env, jobject object,
     }
 
     curr.addr_type = env->GetByteField(current.get(), addrTypeFid);
+
+    ScopedLocalRef<jbyteArray> irkByteArray(
+        env, (jbyteArray)env->GetObjectField(current.get(), irkTypeFid));
+
+    if (irkByteArray.get() != nullptr) {
+      int len = env->GetArrayLength(irkByteArray.get());
+      // IRK is 128 bits or 16 octets, set the bytes or zero it out
+      if (len != 16) {
+        ALOGE("%s: Invalid IRK length '%d'; expected 16", __func__, len);
+        jniThrowIOException(env, EINVAL);
+      }
+      jbyte* irkBytes = env->GetByteArrayElements(irkByteArray.get(), NULL);
+      if (irkBytes == NULL) {
+        jniThrowIOException(env, EINVAL);
+      }
+      for (int j = 0; j < len; j++) {
+        curr.irk[j] = irkBytes[j];
+      }
+    }
 
     ScopedLocalRef<jobject> uuid(env,
                                  env->GetObjectField(current.get(), uuidFid));
@@ -1787,7 +1810,7 @@ static void gattServerAddServiceNative(JNIEnv* env, jobject object,
     db.push_back(curr);
   }
 
-  sGattIf->server->add_service(server_if, std::move(db));
+  sGattIf->server->add_service(server_if, db.data(), db.size());
 }
 
 static void gattServerStopServiceNative(JNIEnv* env, jobject object,
@@ -1810,11 +1833,10 @@ static void gattServerSendIndicationNative(JNIEnv* env, jobject object,
   jbyte* array = env->GetByteArrayElements(val, 0);
   int val_len = env->GetArrayLength(val);
 
-  std::vector<uint8_t> vect_val((uint8_t*)array, (uint8_t*)array + val_len);
-  env->ReleaseByteArrayElements(val, array, JNI_ABORT);
-
   sGattIf->server->send_indication(server_if, attr_handle, conn_id,
-                                   /*confirm*/ 1, std::move(vect_val));
+                                   /*confirm*/ 1, (uint8_t*)array, val_len);
+
+  env->ReleaseByteArrayElements(val, array, JNI_ABORT);
 }
 
 static void gattServerSendNotificationNative(JNIEnv* env, jobject object,
@@ -1825,11 +1847,10 @@ static void gattServerSendNotificationNative(JNIEnv* env, jobject object,
   jbyte* array = env->GetByteArrayElements(val, 0);
   int val_len = env->GetArrayLength(val);
 
-  std::vector<uint8_t> vect_val((uint8_t*)array, (uint8_t*)array + val_len);
-  env->ReleaseByteArrayElements(val, array, JNI_ABORT);
-
   sGattIf->server->send_indication(server_if, attr_handle, conn_id,
-                                   /*confirm*/ 0, std::move(vect_val));
+                                   /*confirm*/ 0, (uint8_t*)array, val_len);
+
+  env->ReleaseByteArrayElements(val, array, JNI_ABORT);
 }
 
 static void gattServerSendResponseNative(JNIEnv* env, jobject object,

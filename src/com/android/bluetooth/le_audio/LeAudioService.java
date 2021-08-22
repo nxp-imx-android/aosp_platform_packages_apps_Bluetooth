@@ -36,9 +36,10 @@ import android.util.Log;
 import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.AdapterService;
 import com.android.bluetooth.btservice.ProfileService;
+import com.android.bluetooth.btservice.ServiceFactory;
 import com.android.bluetooth.btservice.storage.DatabaseManager;
+import com.android.bluetooth.mcp.McpService;
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.internal.util.ArrayUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -63,6 +64,7 @@ public class LeAudioService extends ProfileService {
     private DatabaseManager mDatabaseManager;
     private HandlerThread mStateMachinesThread;
     private BluetoothDevice mPreviousAudioDevice;
+    ServiceFactory mServiceFactory = new ServiceFactory();
 
     LeAudioNativeInterface mLeAudioNativeInterface;
     AudioManager mAudioManager;
@@ -207,7 +209,7 @@ public class LeAudioService extends ProfileService {
             return false;
         }
         ParcelUuid[] featureUuids = mAdapterService.getRemoteUuids(device);
-        if (!ArrayUtils.contains(featureUuids, BluetoothUuid.LE_AUDIO)) {
+        if (!Utils.arrayContains(featureUuids, BluetoothUuid.LE_AUDIO)) {
             Log.e(TAG, "Cannot connect to " + device + " : Remote does not have LE_AUDIO UUID");
             return false;
         }
@@ -325,7 +327,7 @@ public class LeAudioService extends ProfileService {
         synchronized (mStateMachines) {
             for (BluetoothDevice device : bondedDevices) {
                 final ParcelUuid[] featureUuids = device.getUuids();
-                if (!ArrayUtils.contains(featureUuids, BluetoothUuid.LE_AUDIO)) {
+                if (!Utils.arrayContains(featureUuids, BluetoothUuid.LE_AUDIO)) {
                     continue;
                 }
                 int connectionState = BluetoothProfile.STATE_DISCONNECTED;
@@ -581,6 +583,11 @@ public class LeAudioService extends ProfileService {
             if (!mGroupIdConnectedMap.getOrDefault(myGroupId, false)) {
                 mGroupIdConnectedMap.put(myGroupId, true);
             }
+
+            McpService mcpService = mServiceFactory.getMcpService();
+            if (mcpService != null) {
+                mcpService.setDeviceAuthorized(device, true);
+            }
         }
         if (fromState == BluetoothProfile.STATE_CONNECTED && getConnectedDevices().isEmpty()) {
             setActiveDevice(null);
@@ -595,6 +602,11 @@ public class LeAudioService extends ProfileService {
                     Log.d(TAG, device + " is unbond. Remove state machine");
                 }
                 removeStateMachine(device);
+            }
+
+            McpService mcpService = mServiceFactory.getMcpService();
+            if (mcpService != null) {
+                mcpService.setDeviceAuthorized(device, false);
             }
         }
     }

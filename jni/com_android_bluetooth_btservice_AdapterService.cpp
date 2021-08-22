@@ -436,6 +436,25 @@ static jobject createClassicOobDataObject(JNIEnv* env, bt_oob_data_t oob_data) {
   oobDataClassicBuilder =
       env->CallObjectMethod(oobDataClassicBuilder, setRMethod, randomizerHash);
 
+  jmethodID setNameMethod =
+      env->GetMethodID(classicBuilderClass, "setDeviceName",
+                       "([B)Landroid/bluetooth/OobData$ClassicBuilder;");
+
+  int name_char_count = 0;
+  for (int i = 0; i < OOB_NAME_MAX_SIZE; i++) {
+    if (oob_data.device_name[i] == 0) {
+      name_char_count = i;
+      break;
+    }
+  }
+
+  jbyteArray deviceName = env->NewByteArray(name_char_count);
+  env->SetByteArrayRegion(deviceName, 0, name_char_count,
+                          reinterpret_cast<jbyte*>(oob_data.device_name));
+
+  oobDataClassicBuilder =
+      env->CallObjectMethod(oobDataClassicBuilder, setNameMethod, deviceName);
+
   jmethodID buildMethod = env->GetMethodID(classicBuilderClass, "build",
                                            "()Landroid/bluetooth/OobData;");
 
@@ -472,6 +491,25 @@ static jobject createLeOobDataObject(JNIEnv* env, bt_oob_data_t oob_data) {
 
   oobDataLeBuilder =
       env->CallObjectMethod(oobDataLeBuilder, setRMethod, randomizerHash);
+
+  jmethodID setNameMethod =
+      env->GetMethodID(leBuilderClass, "setDeviceName",
+                       "([B)Landroid/bluetooth/OobData$LeBuilder;");
+
+  int name_char_count = 0;
+  for (int i = 0; i < OOB_NAME_MAX_SIZE; i++) {
+    if (oob_data.device_name[i] == 0) {
+      name_char_count = i;
+      break;
+    }
+  }
+
+  jbyteArray deviceName = env->NewByteArray(name_char_count);
+  env->SetByteArrayRegion(deviceName, 0, name_char_count,
+                          reinterpret_cast<jbyte*>(oob_data.device_name));
+
+  oobDataLeBuilder =
+      env->CallObjectMethod(oobDataLeBuilder, setNameMethod, deviceName);
 
   jmethodID buildMethod = env->GetMethodID(leBuilderClass, "build",
                                            "()Landroid/bluetooth/OobData;");
@@ -1162,7 +1200,7 @@ static jboolean set_data(JNIEnv* env, bt_oob_data_t& oob_data, jobject oobData,
     oob_data.le_device_role = leRole;
 
     jint leFlag =
-        callIntGetter(env, oobData, "android/bluetooth/OobData", "getLeFlag");
+        callIntGetter(env, oobData, "android/bluetooth/OobData", "getLeFlags");
     oob_data.le_flags = leFlag;
   }
   return JNI_TRUE;
@@ -1213,22 +1251,32 @@ static jboolean createBondOutOfBandNative(JNIEnv* env, jobject obj,
     return JNI_FALSE;
   }
 
-  // Convert P192 data from Java POJO to C Struct
-  bt_oob_data_t p192_data;
-  if (set_data(env, p192_data, p192Data, transport) == JNI_FALSE) {
+  jbyte* addr = env->GetByteArrayElements(address, NULL);
+  if (addr == NULL) {
     jniThrowIOException(env, EINVAL);
     return JNI_FALSE;
+  }
+
+  // Convert P192 data from Java POJO to C Struct
+  bt_oob_data_t p192_data;
+  if (p192Data != NULL) {
+    if (set_data(env, p192_data, p192Data, transport) == JNI_FALSE) {
+      jniThrowIOException(env, EINVAL);
+      return JNI_FALSE;
+    }
   }
 
   // Convert P256 data from Java POJO to C Struct
   bt_oob_data_t p256_data;
-  if (set_data(env, p256_data, p256Data, transport) == JNI_FALSE) {
-    jniThrowIOException(env, EINVAL);
-    return JNI_FALSE;
+  if (p256Data != NULL) {
+    if (set_data(env, p256_data, p256Data, transport) == JNI_FALSE) {
+      jniThrowIOException(env, EINVAL);
+      return JNI_FALSE;
+    }
   }
 
   return ((sBluetoothInterface->create_bond_out_of_band(
-              (RawAddress*)address, transport, &p192_data, &p256_data)) ==
+              (RawAddress*)addr, transport, &p192_data, &p256_data)) ==
           BT_STATUS_SUCCESS)
              ? JNI_TRUE
              : JNI_FALSE;
@@ -1801,6 +1849,12 @@ jint JNI_OnLoad(JavaVM* jvm, void* reserved) {
   status = android::register_com_android_bluetooth_le_audio(e);
   if (status < 0) {
     ALOGE("jni le_audio registration failure: %d", status);
+    return JNI_ERR;
+  }
+
+  status = android::register_com_android_bluetooth_vc(e);
+  if (status < 0) {
+    ALOGE("jni vc registration failure: %d", status);
     return JNI_ERR;
   }
 
