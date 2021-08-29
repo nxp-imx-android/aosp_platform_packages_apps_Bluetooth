@@ -1469,7 +1469,7 @@ static jboolean setDevicePropertyNative(JNIEnv* env, jobject obj,
 }
 
 static jboolean getRemoteServicesNative(JNIEnv* env, jobject obj,
-                                        jbyteArray address) {
+                                        jbyteArray address, jint transport) {
   ALOGV("%s", __func__);
 
   if (!sBluetoothInterface) return JNI_FALSE;
@@ -1480,7 +1480,8 @@ static jboolean getRemoteServicesNative(JNIEnv* env, jobject obj,
     return JNI_FALSE;
   }
 
-  int ret = sBluetoothInterface->get_remote_services((RawAddress*)addr);
+  int ret =
+      sBluetoothInterface->get_remote_services((RawAddress*)addr, transport);
   env->ReleaseByteArrayElements(address, addr, 0);
   return (ret == BT_STATUS_SUCCESS) ? JNI_TRUE : JNI_FALSE;
 }
@@ -1543,27 +1544,6 @@ static jboolean factoryResetNative(JNIEnv* env, jobject obj) {
   if (!sBluetoothInterface) return JNI_FALSE;
   int ret = sBluetoothInterface->config_clear();
   return (ret == BT_STATUS_SUCCESS) ? JNI_TRUE : JNI_FALSE;
-}
-
-static void interopDatabaseClearNative(JNIEnv* env, jobject obj) {
-  ALOGV("%s", __func__);
-  if (!sBluetoothInterface) return;
-  sBluetoothInterface->interop_database_clear();
-}
-
-static void interopDatabaseAddNative(JNIEnv* env, jobject obj, int feature,
-                                     jbyteArray address, int length) {
-  ALOGV("%s", __func__);
-  if (!sBluetoothInterface) return;
-
-  jbyte* addr = env->GetByteArrayElements(address, NULL);
-  if (addr == NULL) {
-    jniThrowIOException(env, EINVAL);
-    return;
-  }
-
-  sBluetoothInterface->interop_database_add(feature, (RawAddress*)addr, length);
-  env->ReleaseByteArrayElements(address, addr, 0);
 }
 
 static jbyteArray obfuscateAddressNative(JNIEnv* env, jobject obj,
@@ -1713,15 +1693,13 @@ static JNINativeMethod sMethods[] = {
     {"getConnectionStateNative", "([B)I", (void*)getConnectionStateNative},
     {"pinReplyNative", "([BZI[B)Z", (void*)pinReplyNative},
     {"sspReplyNative", "([BIZI)Z", (void*)sspReplyNative},
-    {"getRemoteServicesNative", "([B)Z", (void*)getRemoteServicesNative},
+    {"getRemoteServicesNative", "([BI)Z", (void*)getRemoteServicesNative},
     {"alarmFiredNative", "()V", (void*)alarmFiredNative},
     {"readEnergyInfo", "()I", (void*)readEnergyInfo},
     {"dumpNative", "(Ljava/io/FileDescriptor;[Ljava/lang/String;)V",
      (void*)dumpNative},
     {"dumpMetricsNative", "()[B", (void*)dumpMetricsNative},
     {"factoryResetNative", "()Z", (void*)factoryResetNative},
-    {"interopDatabaseClearNative", "()V", (void*)interopDatabaseClearNative},
-    {"interopDatabaseAddNative", "(I[BI)V", (void*)interopDatabaseAddNative},
     {"obfuscateAddressNative", "([B)[B", (void*)obfuscateAddressNative},
     {"setBufferLengthMillisNative", "(II)Z",
      (void*)setBufferLengthMillisNative},
