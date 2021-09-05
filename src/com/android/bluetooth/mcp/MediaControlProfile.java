@@ -90,11 +90,9 @@ public class MediaControlProfile implements MediaControlServiceCallbacks {
 
             mCurrentData = data;
 
-            mContext.getMainThreadHandler().post(() -> {
-                onCurrentPlayerStateUpdated(state, metadata);
-                if (queue) onCurrentPlayerQueueUpdated();
-                processPendingPlayerStateRequest();
-            });
+            onCurrentPlayerStateUpdated(state, metadata);
+            if (queue) onCurrentPlayerQueueUpdated();
+            processPendingPlayerStateRequest();
         }
 
         @Override
@@ -126,7 +124,10 @@ public class MediaControlProfile implements MediaControlServiceCallbacks {
         Map<PlayerStateField, Object> state_map = new HashMap<>();
 
         if (mMediaPlayerList.getActivePlayer() != mLastActivePlayer) {
-            state_map.put(PlayerStateField.PLAYER_NAME, getCurrentPlayerName());
+            String playerName = getCurrentPlayerName();
+            if (playerName != null) {
+                state_map.put(PlayerStateField.PLAYER_NAME, playerName);
+            }
         }
 
         if (stateChanged) {
@@ -160,18 +161,26 @@ public class MediaControlProfile implements MediaControlServiceCallbacks {
                 }
 
                 state_map.put(PlayerStateField.TRACK_DURATION,
-                        Long.valueOf(mCurrentData.metadata.duration));
-                state_map.put(PlayerStateField.TRACK_TITLE, mCurrentData.metadata.title);
+                        mCurrentData.metadata.duration != null
+                                ? Long.valueOf(mCurrentData.metadata.duration)
+                                : Long.valueOf(MediaControlGattServiceInterface
+                                                       .TRACK_DURATION_UNAVAILABLE));
+
+                state_map.put(PlayerStateField.TRACK_TITLE,
+                        mCurrentData.metadata.title != null ? mCurrentData.metadata.title : "");
 
                 // Update the position if track has changed
-                if (mCurrentData.state != null) {
-                    state_map.put(PlayerStateField.TRACK_POSITION,
-                            getDriftCorrectedTrackPosition(mCurrentData.state));
-                }
+                state_map.put(PlayerStateField.TRACK_POSITION,
+                        mCurrentData.state != null
+                                ? getDriftCorrectedTrackPosition(mCurrentData.state)
+                                : Long.valueOf(MediaControlGattServiceInterface
+                                                       .TRACK_POSITION_UNAVAILABLE));
             } else {
                 state_map.put(PlayerStateField.TRACK_DURATION,
                         Long.valueOf(MediaControlGattServiceInterface.TRACK_DURATION_UNAVAILABLE));
                 state_map.put(PlayerStateField.TRACK_TITLE, "");
+                state_map.put(PlayerStateField.TRACK_POSITION,
+                        Long.valueOf(MediaControlGattServiceInterface.TRACK_POSITION_UNAVAILABLE));
             }
         }
 
