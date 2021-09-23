@@ -38,8 +38,9 @@ import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
-import android.util.MathUtils;
 
 import com.android.internal.annotations.VisibleForTesting;
 
@@ -127,6 +128,7 @@ public class MediaControlGattService implements MediaControlGattServiceInterface
     private MediaControlServiceCallbacks mCallbacks;
     private BluetoothGattServerProxy mBluetoothGattServer;
     private BluetoothGattService mGattService = null;
+    private Handler mHandler = new Handler(Looper.getMainLooper());
     private Map<Integer, BluetoothGattCharacteristic> mCharacteristics = new HashMap<>();
     private MediaState mCurrentMediaState = MediaState.INACTIVE;
     private Map<BluetoothDevice, List<GattOpContext>> mPendingGattOperations = new HashMap<>();
@@ -808,7 +810,7 @@ public class MediaControlGattService implements MediaControlGattServiceInterface
     }
 
     private void handlePlaybackSpeedRequest(int speed) {
-        float floatingSpeed = MathUtils.pow(2, speed / 64);
+        float floatingSpeed = (float) Math.pow(2, speed / 64);
         mCallbacks.onPlaybackSpeedSetRequest(floatingSpeed);
     }
 
@@ -844,7 +846,7 @@ public class MediaControlGattService implements MediaControlGattServiceInterface
         // Test for RFU bits and currently supported opcodes
         if (!isOpcodeSupported(opcode)) {
             Log.e(TAG, "handleMediaControlPointRequest: opcode or feature not supported");
-            mContext.getMainThreadHandler().post(() -> {
+            mHandler.post(() -> {
                 setMediaControlRequestResult(new Request(opcode, 0),
                         Request.Results.OPCODE_NOT_SUPPORTED);
             });
@@ -1312,11 +1314,11 @@ public class MediaControlGattService implements MediaControlGattServiceInterface
             speed = PLAY_SPEED_MAX;
         }
 
-        return new Float(64 * MathUtils.log(speed) / MathUtils.log(2)).intValue();
+        return new Float(64 * Math.log(speed) / Math.log(2)).intValue();
     }
 
     private static float CharacteristicSpeedIntValueToSpeedFloat(Integer speed) {
-        return new Float(MathUtils.pow(2, (speed.floatValue() / 64.0f)));
+        return new Float(Math.pow(2, (speed.floatValue() / 64.0f)));
     }
 
     @VisibleForTesting

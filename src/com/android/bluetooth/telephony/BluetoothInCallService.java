@@ -45,6 +45,7 @@ import android.util.Log;
 
 import androidx.annotation.VisibleForTesting;
 
+import com.android.bluetooth.btservice.AdapterService;
 import com.android.bluetooth.hfp.BluetoothHeadsetProxy;
 
 import java.util.ArrayList;
@@ -115,7 +116,7 @@ public class BluetoothInCallService extends InCallService {
     // A map from Calls to indexes used to identify calls for CLCC (C* List Current Calls).
     private final Map<BluetoothCall, Integer> mClccIndexMap = new HashMap<>();
 
-    private static BluetoothInCallService sInstance;
+    private static BluetoothInCallService sInstance = null;
 
     public CallInfo mCallInfo = new CallInfo();
 
@@ -185,6 +186,10 @@ public class BluetoothInCallService extends InCallService {
                 return;
             }
             if (call.isExternalCall()) {
+                return;
+            }
+            if (state == Call.STATE_DISCONNECTING) {
+                mLastState = state;
                 return;
             }
 
@@ -308,6 +313,13 @@ public class BluetoothInCallService extends InCallService {
     @Override
     public boolean onUnbind(Intent intent) {
         Log.i(TAG, "onUnbind. Intent: " + intent);
+        BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+            Log.i(TAG, "Bluetooth is off when unbind, disable BluetoothInCallService");
+            AdapterService adapterService = AdapterService.getAdapterService();
+            adapterService.enableBluetoothInCallService(false);
+
+        }
         return super.onUnbind(intent);
     }
 
@@ -488,7 +500,7 @@ public class BluetoothInCallService extends InCallService {
                         .setSnrDb(snr)
                         .setRetransmittedPacketsCount(retransmissionCount)
                         .setPacketsNotReceivedCount(packetsNotReceiveCount)
-                        .setPacketsNotReceivedCount(negativeAcknowledgementCount)
+                        .setNegativeAcknowledgementCount(negativeAcknowledgementCount)
                         .build());
         call.sendCallEvent(
                 BluetoothCallQualityReport.EVENT_BLUETOOTH_CALL_QUALITY_REPORT, b);
@@ -552,6 +564,7 @@ public class BluetoothInCallService extends InCallService {
             unregisterReceiver(mBluetoothAdapterReceiver);
             mBluetoothAdapterReceiver = null;
         }
+        sInstance = null;
         super.onDestroy();
     }
 
@@ -592,7 +605,8 @@ public class BluetoothInCallService extends InCallService {
         }
 
         BluetoothCall conferenceCall = getBluetoothCallById(call.getParentId());
-        if (!mCallInfo.isNullCall(conferenceCall)) {
+        if (!mCallInfo.isNullCall(conferenceCall)
+                && conferenceCall.hasProperty(Call.Details.PROPERTY_GENERIC_CONFERENCE)) {
             isPartOfConference = true;
 
             // Run some alternative states for Conference-level merge/swap support.
@@ -1140,7 +1154,7 @@ public class BluetoothInCallService extends InCallService {
         }
 
         public boolean isNullCall(BluetoothCall call) {
-            return call == null || call.getCall() == null;
+            return call == null || call.isCallNull();
         }
     };
 };
