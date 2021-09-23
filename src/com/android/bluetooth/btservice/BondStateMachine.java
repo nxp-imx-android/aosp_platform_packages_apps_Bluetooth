@@ -37,9 +37,9 @@ import com.android.bluetooth.hfp.HeadsetService;
 import com.android.bluetooth.hfpclient.HeadsetClientService;
 import com.android.bluetooth.hid.HidHostService;
 import com.android.bluetooth.pbapclient.PbapClientService;
-import com.android.bluetooth.statemachine.State;
-import com.android.bluetooth.statemachine.StateMachine;
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.internal.util.State;
+import com.android.internal.util.StateMachine;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -390,7 +390,7 @@ final class BondStateMachine extends StateMachine {
         }
         BluetoothStatsLog.write(BluetoothStatsLog.BLUETOOTH_BOND_STATE_CHANGED,
                 mAdapterService.obfuscateAddress(device), 0, device.getType(),
-                newState, BluetoothProtoEnums.BOND_SUB_STATE_UNKNOWN, reason,
+                newState, BluetoothProtoEnums.BOND_SUB_STATE_LOCAL_BOND_STATE_INTENT_SENT, reason,
                 mAdapterService.getMetricId(device));
         BluetoothClass deviceClass = device.getBluetoothClass();
         int classOfDevice = deviceClass == null ? 0 : deviceClass.getClassOfDevice();
@@ -426,7 +426,7 @@ final class BondStateMachine extends StateMachine {
                 + state2str(newState));
     }
 
-    void bondStateChangeCallback(int status, byte[] address, int newState) {
+    void bondStateChangeCallback(int status, byte[] address, int newState, int hciReason) {
         BluetoothDevice device = mRemoteDevices.getDevice(address);
 
         if (device == null) {
@@ -437,7 +437,7 @@ final class BondStateMachine extends StateMachine {
         }
 
         infoLog("bondStateChangeCallback: Status: " + status + " Address: " + device + " newState: "
-                + newState);
+                + newState + " hciReason: " + hciReason);
 
         Message msg = obtainMessage(BONDING_STATE_CHANGE);
         msg.obj = device;

@@ -278,7 +278,8 @@ static void device_found_callback(int num_properties,
 }
 
 static void bond_state_changed_callback(bt_status_t status, RawAddress* bd_addr,
-                                        bt_bond_state_t state) {
+                                        bt_bond_state_t state,
+                                        int fail_reason) {
   CallbackEnv sCallbackEnv(__func__);
   if (!sCallbackEnv.valid()) return;
 
@@ -297,11 +298,14 @@ static void bond_state_changed_callback(bt_status_t status, RawAddress* bd_addr,
                                    (jbyte*)bd_addr);
 
   sCallbackEnv->CallVoidMethod(sJniCallbacksObj, method_bondStateChangeCallback,
-                               (jint)status, addr.get(), (jint)state);
+                               (jint)status, addr.get(), (jint)state,
+                               (jint)fail_reason);
 }
 
 static void acl_state_changed_callback(bt_status_t status, RawAddress* bd_addr,
-                                       bt_acl_state_t state, bt_hci_error_code_t hci_reason) {
+                                       bt_acl_state_t state,
+                                       int transport_link_type,
+                                       bt_hci_error_code_t hci_reason) {
   if (!bd_addr) {
     ALOGE("Address is null in %s", __func__);
     return;
@@ -320,7 +324,8 @@ static void acl_state_changed_callback(bt_status_t status, RawAddress* bd_addr,
                                    (jbyte*)bd_addr);
 
   sCallbackEnv->CallVoidMethod(sJniCallbacksObj, method_aclStateChangeCallback,
-                               (jint)status, addr.get(), (jint)state, (jint)hci_reason);
+                               (jint)status, addr.get(), (jint)state,
+                               (jint)transport_link_type, (jint)hci_reason);
 }
 
 static void discovery_state_changed_callback(bt_discovery_state_t state) {
@@ -840,10 +845,10 @@ static void classInitNative(JNIEnv* env, jclass clazz) {
       env->GetMethodID(jniCallbackClass, "sspRequestCallback", "([B[BIII)V");
 
   method_bondStateChangeCallback =
-      env->GetMethodID(jniCallbackClass, "bondStateChangeCallback", "(I[BI)V");
+      env->GetMethodID(jniCallbackClass, "bondStateChangeCallback", "(I[BII)V");
 
   method_aclStateChangeCallback =
-      env->GetMethodID(jniCallbackClass, "aclStateChangeCallback", "(I[BII)V");
+      env->GetMethodID(jniCallbackClass, "aclStateChangeCallback", "(I[BIII)V");
 
   method_linkQualityReportCallback = env->GetMethodID(
       jniCallbackClass, "linkQualityReportCallback", "(JIIIIII)V");
@@ -1546,27 +1551,6 @@ static jboolean factoryResetNative(JNIEnv* env, jobject obj) {
   return (ret == BT_STATUS_SUCCESS) ? JNI_TRUE : JNI_FALSE;
 }
 
-static void interopDatabaseClearNative(JNIEnv* env, jobject obj) {
-  ALOGV("%s", __func__);
-  if (!sBluetoothInterface) return;
-  sBluetoothInterface->interop_database_clear();
-}
-
-static void interopDatabaseAddNative(JNIEnv* env, jobject obj, int feature,
-                                     jbyteArray address, int length) {
-  ALOGV("%s", __func__);
-  if (!sBluetoothInterface) return;
-
-  jbyte* addr = env->GetByteArrayElements(address, NULL);
-  if (addr == NULL) {
-    jniThrowIOException(env, EINVAL);
-    return;
-  }
-
-  sBluetoothInterface->interop_database_add(feature, (RawAddress*)addr, length);
-  env->ReleaseByteArrayElements(address, addr, 0);
-}
-
 static jbyteArray obfuscateAddressNative(JNIEnv* env, jobject obj,
                                          jbyteArray address) {
   ALOGV("%s", __func__);
@@ -1721,8 +1705,6 @@ static JNINativeMethod sMethods[] = {
      (void*)dumpNative},
     {"dumpMetricsNative", "()[B", (void*)dumpMetricsNative},
     {"factoryResetNative", "()Z", (void*)factoryResetNative},
-    {"interopDatabaseClearNative", "()V", (void*)interopDatabaseClearNative},
-    {"interopDatabaseAddNative", "(I[BI)V", (void*)interopDatabaseAddNative},
     {"obfuscateAddressNative", "([B)[B", (void*)obfuscateAddressNative},
     {"setBufferLengthMillisNative", "(II)Z",
      (void*)setBufferLengthMillisNative},
@@ -1856,6 +1838,12 @@ jint JNI_OnLoad(JavaVM* jvm, void* reserved) {
   status = android::register_com_android_bluetooth_vc(e);
   if (status < 0) {
     ALOGE("jni vc registration failure: %d", status);
+    return JNI_ERR;
+  }
+
+  status = android::register_com_android_bluetooth_csip_set_coordinator(e);
+  if (status < 0) {
+    ALOGE("jni csis client registration failure: %d", status);
     return JNI_ERR;
   }
 

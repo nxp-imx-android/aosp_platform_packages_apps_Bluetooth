@@ -53,6 +53,7 @@ import android.bluetooth.IBluetoothSocketManager;
 import android.bluetooth.OobData;
 import android.bluetooth.UidTraffic;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -82,7 +83,6 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
 import android.util.SparseArray;
-
 import com.android.bluetooth.BluetoothMetricsProto;
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.Utils;
@@ -93,6 +93,7 @@ import com.android.bluetooth.btservice.activityattribution.ActivityAttributionSe
 import com.android.bluetooth.btservice.bluetoothkeystore.BluetoothKeystoreService;
 import com.android.bluetooth.btservice.storage.DatabaseManager;
 import com.android.bluetooth.btservice.storage.MetadataDatabase;
+import com.android.bluetooth.csip.CsipSetCoordinatorService;
 import com.android.bluetooth.gatt.GattService;
 import com.android.bluetooth.hearingaid.HearingAidService;
 import com.android.bluetooth.hfp.HeadsetService;
@@ -175,6 +176,10 @@ public class AdapterService extends Service {
     private static final String SIM_ACCESS_PERMISSION_PREFERENCE_FILE = "sim_access_permission";
 
     private static final int CONTROLLER_ENERGY_UPDATE_TIMEOUT_MILLIS = 30;
+
+    private static final ComponentName BLUETOOTH_INCALLSERVICE_COMPONENT =
+            new ComponentName("com.android.bluetooth",
+                    BluetoothInCallService.class.getCanonicalName());
 
     // Report ID definition
     public enum BqrQualityReportId {
@@ -274,6 +279,7 @@ public class AdapterService extends Service {
     private HearingAidService mHearingAidService;
     private SapService mSapService;
     private VolumeControlService mVolumeControlService;
+    private CsipSetCoordinatorService mCsipSetCoordinatorService;
 
     /**
      * Register a {@link ProfileService} with AdapterService.
@@ -411,65 +417,6 @@ public class AdapterService extends Service {
     }
 
     private final AdapterServiceHandler mHandler = new AdapterServiceHandler();
-
-    private void updateInteropDatabase() {
-        interopDatabaseClearNative();
-
-        String interopString = Settings.Global.getString(getContentResolver(),
-                Settings.Global.BLUETOOTH_INTEROPERABILITY_LIST);
-        if (interopString == null) {
-            return;
-        }
-        Log.d(TAG, "updateInteropDatabase: [" + interopString + "]");
-
-        String[] entries = interopString.split(";");
-        for (String entry : entries) {
-            String[] tokens = entry.split(",");
-            if (tokens.length != 2) {
-                continue;
-            }
-
-            // Get feature
-            int feature = 0;
-            try {
-                feature = Integer.parseInt(tokens[1]);
-            } catch (NumberFormatException e) {
-                Log.e(TAG, "updateInteropDatabase: Invalid feature '" + tokens[1] + "'");
-                continue;
-            }
-
-            // Get address bytes and length
-            int length = (tokens[0].length() + 1) / 3;
-            if (length < 1 || length > 6) {
-                Log.e(TAG, "updateInteropDatabase: Malformed address string '" + tokens[0] + "'");
-                continue;
-            }
-
-            byte[] addr = new byte[6];
-            int offset = 0;
-            for (int i = 0; i < tokens[0].length(); ) {
-                if (tokens[0].charAt(i) == ':') {
-                    i += 1;
-                } else {
-                    try {
-                        addr[offset++] = (byte) Integer.parseInt(tokens[0].substring(i, i + 2), 16);
-                    } catch (NumberFormatException e) {
-                        offset = 0;
-                        break;
-                    }
-                    i += 2;
-                }
-            }
-
-            // Check if address was parsed ok, otherwise, move on...
-            if (offset == 0) {
-                continue;
-            }
-
-            // Add entry
-            interopDatabaseAddNative(feature, addr, length);
-        }
-    }
 
     @Override
     public void onCreate() {
@@ -775,6 +722,20 @@ public class AdapterService extends Service {
         }
     }
 
+    /**
+     * Enable/disable BluetoothInCallService
+     *
+     * @param enable to enable/disable BluetoothInCallService.
+     */
+    public void enableBluetoothInCallService(boolean enable) {
+        debugLog("enableBluetoothInCallService() - Enable = " + enable);
+        getPackageManager().setComponentEnabledSetting(
+                BLUETOOTH_INCALLSERVICE_COMPONENT,
+                enable ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP);
+    }
+
     void cleanup() {
         debugLog("cleanup()");
         if (mCleaningUp) {
@@ -977,6 +938,9 @@ public class AdapterService extends Service {
         if (profile == BluetoothProfile.VOLUME_CONTROL) {
             return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.VOLUME_CONTROL);
         }
+        if (profile == BluetoothProfile.CSIP_SET_COORDINATOR) {
+            return Utils.arrayContains(remoteDeviceUuids, BluetoothUuid.COORDINATED_SET);
+        }
 
         Log.e(TAG, "isSupported: Unexpected profile passed in to function: " + profile);
         return false;
@@ -1030,7 +994,11 @@ public class AdapterService extends Service {
                 > BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
             return true;
         }
-
+        if (mCsipSetCoordinatorService != null
+                && mCsipSetCoordinatorService.getConnectionPolicy(device)
+                        > BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+            return true;
+        }
         return false;
     }
 
@@ -1110,6 +1078,14 @@ public class AdapterService extends Service {
             Log.i(TAG, "connectEnabledProfiles: Connecting Volume Control Profile");
             mVolumeControlService.connect(device);
         }
+        if (mCsipSetCoordinatorService != null
+                && isSupported(localDeviceUuids, remoteDeviceUuids,
+                        BluetoothProfile.CSIP_SET_COORDINATOR, device)
+                && mCsipSetCoordinatorService.getConnectionPolicy(device)
+                        > BluetoothProfile.CONNECTION_POLICY_FORBIDDEN) {
+            Log.i(TAG, "connectEnabledProfiles: Connecting Coordinated Set Profile");
+            mCsipSetCoordinatorService.connect(device);
+        }
 
         return true;
     }
@@ -1148,6 +1124,7 @@ public class AdapterService extends Service {
         mHearingAidService = HearingAidService.getHearingAidService();
         mSapService = SapService.getSapService();
         mVolumeControlService = VolumeControlService.getVolumeControlService();
+        mCsipSetCoordinatorService = CsipSetCoordinatorService.getCsipSetCoordinatorService();
     }
 
     private boolean isAvailable() {
@@ -2719,6 +2696,14 @@ public class AdapterService extends Service {
                     BluetoothProfile.CONNECTION_POLICY_ALLOWED);
             numProfilesConnected++;
         }
+        if (mCsipSetCoordinatorService != null
+                && isSupported(localDeviceUuids, remoteDeviceUuids,
+                        BluetoothProfile.CSIP_SET_COORDINATOR, device)) {
+            Log.i(TAG, "connectAllEnabledProfiles: Connecting Coordinated Set Profile");
+            mCsipSetCoordinatorService.setConnectionPolicy(
+                    device, BluetoothProfile.CONNECTION_POLICY_ALLOWED);
+            numProfilesConnected++;
+        }
 
         Log.i(TAG, "connectAllEnabledProfiles: Number of Profiles Connected: "
                 + numProfilesConnected);
@@ -2808,6 +2793,12 @@ public class AdapterService extends Service {
                 == BluetoothProfile.STATE_CONNECTED) {
             Log.i(TAG, "disconnectAllEnabledProfiles: Disconnecting Sap Profile");
             mSapService.disconnect(device);
+        }
+        if (mCsipSetCoordinatorService != null
+                && mCsipSetCoordinatorService.getConnectionState(device)
+                        == BluetoothProfile.STATE_CONNECTED) {
+            Log.i(TAG, "disconnectAllEnabledProfiles: Disconnecting Coordinater Set Profile");
+            mCsipSetCoordinatorService.disconnect(device);
         }
 
         return true;
@@ -3022,6 +3013,14 @@ public class AdapterService extends Service {
 
     public int getLeMaximumAdvertisingDataLength() {
         return mAdapterProperties.getLeMaximumAdvertisingDataLength();
+    }
+
+    public boolean isLePeriodicAdvertisingSyncTransferSenderSupported() {
+        return mAdapterProperties.isLePeriodicAdvertisingSyncTransferSenderSupported();
+    }
+
+    public boolean isLeConnectedIsochronousStreamCentralSupported() {
+        return mAdapterProperties.isLeConnectedIsochronousStreamCentralSupported();
     }
 
     /**
@@ -3588,10 +3587,6 @@ public class AdapterService extends Service {
     private native void dumpNative(FileDescriptor fd, String[] arguments);
 
     private native byte[] dumpMetricsNative();
-
-    private native void interopDatabaseClearNative();
-
-    private native void interopDatabaseAddNative(int feature, byte[] address, int length);
 
     private native byte[] obfuscateAddressNative(byte[] address);
 

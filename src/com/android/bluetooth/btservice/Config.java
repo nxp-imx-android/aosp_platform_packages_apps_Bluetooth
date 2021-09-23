@@ -16,15 +16,11 @@
 
 package com.android.bluetooth.btservice;
 
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothProfile;
-import android.bluetooth.IBluetoothManager;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.Resources;
-import android.os.IBinder;
-import android.os.RemoteException;
-import android.os.ServiceManager;
+import android.os.SystemConfigManager;
 import android.os.SystemProperties;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -35,6 +31,7 @@ import com.android.bluetooth.a2dp.A2dpService;
 import com.android.bluetooth.a2dpsink.A2dpSinkService;
 import com.android.bluetooth.avrcp.AvrcpTargetService;
 import com.android.bluetooth.avrcpcontroller.AvrcpControllerService;
+import com.android.bluetooth.csip.CsipSetCoordinatorService;
 import com.android.bluetooth.gatt.GattService;
 import com.android.bluetooth.hearingaid.HearingAidService;
 import com.android.bluetooth.hfp.HeadsetService;
@@ -115,7 +112,10 @@ public class Config {
                     (1 << BluetoothProfile.MCP_SERVER)),
             new ProfileConfig(HearingAidService.class,
                     com.android.internal.R.bool.config_hearing_aid_profile_supported,
-                    (1 << BluetoothProfile.HEARING_AID))
+                    (1 << BluetoothProfile.HEARING_AID)),
+            new ProfileConfig(CsipSetCoordinatorService.class,
+                    R.bool.profile_supported_csip_set_coordinator,
+                    (1 << BluetoothProfile.CSIP_SET_COORDINATOR)),
     };
 
     private static Class[] sSupportedProfiles = new Class[0];
@@ -130,8 +130,7 @@ public class Config {
         if (resources == null) {
             return;
         }
-        List<String> enabledProfiles =
-                getSystemConfigEnabledProfilesForPackage(ctx.getPackageName());
+        List<String> enabledProfiles = getSystemConfigEnabledProfilesForPackage(ctx);
 
         ArrayList<Class> profiles = new ArrayList<>(PROFILE_SERVICES_AND_FLAGS.length);
         for (ProfileConfig config : PROFILE_SERVICES_AND_FLAGS) {
@@ -217,18 +216,11 @@ public class Config {
         return false;
     }
 
-    private static List<String> getSystemConfigEnabledProfilesForPackage(String packageName) {
-        IBinder b = ServiceManager.getService(BluetoothAdapter.BLUETOOTH_MANAGER_SERVICE);
-        if (b == null) {
-            Log.e(TAG, "Bluetooth binder is null");
-        }
-
-        IBluetoothManager managerService = IBluetoothManager.Stub.asInterface(b);
-        try {
-            return managerService.getSystemConfigEnabledProfilesForPackage(packageName);
-        } catch (RemoteException e) {
+    private static List<String> getSystemConfigEnabledProfilesForPackage(Context ctx) {
+        SystemConfigManager systemConfigManager = ctx.getSystemService(SystemConfigManager.class);
+        if (systemConfigManager == null) {
             return null;
         }
-
+        return systemConfigManager.getEnabledComponentOverrides(ctx.getPackageName());
     }
 }
