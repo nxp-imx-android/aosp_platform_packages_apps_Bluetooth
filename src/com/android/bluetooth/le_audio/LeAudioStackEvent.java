@@ -30,9 +30,8 @@ public class LeAudioStackEvent {
     public static final int EVENT_TYPE_GROUP_STATUS_CHANGED = 2;
     public static final int EVENT_TYPE_GROUP_NODE_STATUS_CHANGED = 3;
     public static final int EVENT_TYPE_AUDIO_CONF_CHANGED = 4;
-    public static final int EVENT_TYPE_SET_MEMBER_AVAILABLE = 5;
-    // -------- DO NOT PUT ANY NEW UNICAST EVENTS BELOW THIS LINE-------------
-    public static final int EVENT_TYPE_UNICAST_MAX = 7;
+        // -------- DO NOT PUT ANY NEW UNICAST EVENTS BELOW THIS LINE-------------
+    public static final int EVENT_TYPE_UNICAST_MAX = 5;
 
     // Do not modify without updating the HAL bt_le_audio.h files.
     // Match up with GroupStatus enum of bt_le_audio.h
@@ -41,13 +40,8 @@ public class LeAudioStackEvent {
     static final int CONNECTION_STATE_CONNECTED = 2;
     static final int CONNECTION_STATE_DISCONNECTING = 3;
 
-    static final int GROUP_STATUS_IDLE = 0;
+    static final int GROUP_STATUS_INACTIVE = 0;
     static final int GROUP_STATUS_ACTIVE = 1;
-    static final int GROUP_STATUS_INACTIVE = 2;
-    static final int GROUP_STATUS_STREAMING = 3;
-    static final int GROUP_STATUS_SUSPENDED = 4;
-    static final int GROUP_STATUS_RECONFIGURED = 5;
-    static final int GROUP_STATUS_DESTROYED = 6;
 
     static final int GROUP_NODE_ADDED = 1;
     static final int GROUP_NODE_REMOVED = 2;
@@ -91,8 +85,6 @@ public class LeAudioStackEvent {
                 return "EVENT_TYPE_GROUP_NODE_STATUS_CHANGED";
             case EVENT_TYPE_AUDIO_CONF_CHANGED:
                 return "EVENT_TYPE_AUDIO_CONF_CHANGED";
-            case EVENT_TYPE_SET_MEMBER_AVAILABLE:
-                return "EVENT_TYPE_SET_MEMBER_AVAILABLE";
             default:
                 return "EVENT_TYPE_UNKNOWN:" + type;
         }
@@ -116,9 +108,7 @@ public class LeAudioStackEvent {
             case EVENT_TYPE_GROUP_NODE_STATUS_CHANGED:
                 // same as EVENT_TYPE_GROUP_STATUS_CHANGED
             case EVENT_TYPE_GROUP_STATUS_CHANGED:
-                // same as EVENT_TYPE_GROUP_STATUS_CHANGED
-            case EVENT_TYPE_SET_MEMBER_AVAILABLE:
-                // same as EVENT_TYPE_GROUP_STATUS_CHANGED
+                return "{group_id:" + Integer.toString(value) + "}";
             case EVENT_TYPE_AUDIO_CONF_CHANGED:
                 // FIXME: It should have proper direction names here
                 return "{direction:" + value + "}";
@@ -132,20 +122,10 @@ public class LeAudioStackEvent {
         switch (type) {
             case EVENT_TYPE_GROUP_STATUS_CHANGED:
                 switch (value) {
-                    case GROUP_STATUS_IDLE:
-                        return "GROUP_STATUS_IDLE";
                     case GROUP_STATUS_ACTIVE:
                         return "GROUP_STATUS_ACTIVE";
                     case GROUP_STATUS_INACTIVE:
                         return "GROUP_STATUS_INACTIVE";
-                    case GROUP_STATUS_STREAMING:
-                        return "GROUP_STATUS_STREAMING";
-                    case GROUP_STATUS_SUSPENDED:
-                        return "GROUP_STATUS_SUSPENDED";
-                    case GROUP_STATUS_RECONFIGURED:
-                        return "GROUP_STATUS_RECONFIGURED";
-                    case GROUP_STATUS_DESTROYED:
-                        return "GROUP_STATUS_DESTROYED";
                     default:
                         break;
                 }
