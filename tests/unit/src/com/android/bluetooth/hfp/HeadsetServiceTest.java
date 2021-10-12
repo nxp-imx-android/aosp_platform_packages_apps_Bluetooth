@@ -149,7 +149,7 @@ public class HeadsetServiceTest {
         verify(mObjectsFactory).getNativeInterface();
         mHeadsetServiceBinder = (IBluetoothHeadset.Stub) mHeadsetService.initBinder();
         Assert.assertNotNull(mHeadsetServiceBinder);
-        mHeadsetServiceBinder.setForceScoAudio(true);
+        mHeadsetServiceBinder.setForceScoAudio(true, mAdapter.getAttributionSource());
     }
 
     @After
@@ -703,7 +703,7 @@ public class HeadsetServiceTest {
                         TEST_PHONE_NUMBER, 128, "");
         mHeadsetServiceBinder.phoneStateChanged(headsetCallState.mNumActive,
                 headsetCallState.mNumHeld, headsetCallState.mCallState, headsetCallState.mNumber,
-                headsetCallState.mType, headsetCallState.mName);
+                headsetCallState.mType, headsetCallState.mName, mAdapter.getAttributionSource());
         TestUtils.waitForLooperToFinishScheduledTask(
                 mHeadsetService.getStateMachinesThreadLooper());
         verify(mAudioManager, never()).setParameters("A2dpSuspended=true");
@@ -760,7 +760,7 @@ public class HeadsetServiceTest {
         // Change phone state
         mHeadsetServiceBinder.phoneStateChanged(headsetCallState.mNumActive,
                 headsetCallState.mNumHeld, headsetCallState.mCallState, headsetCallState.mNumber,
-                headsetCallState.mType, headsetCallState.mName);
+                headsetCallState.mType, headsetCallState.mName, mAdapter.getAttributionSource());
         TestUtils.waitForLooperToFinishScheduledTask(
                 mHeadsetService.getStateMachinesThreadLooper());
 
@@ -779,7 +779,7 @@ public class HeadsetServiceTest {
         headsetCallState.mCallState = HeadsetHalConstants.CALL_STATE_ALERTING;
         mHeadsetServiceBinder.phoneStateChanged(headsetCallState.mNumActive,
                 headsetCallState.mNumHeld, headsetCallState.mCallState, headsetCallState.mNumber,
-                headsetCallState.mType, headsetCallState.mName);
+                headsetCallState.mType, headsetCallState.mName, mAdapter.getAttributionSource());
         TestUtils.waitForLooperToFinishScheduledTask(
                 mHeadsetService.getStateMachinesThreadLooper());
         // Ask Audio HAL to suspend A2DP
@@ -845,7 +845,7 @@ public class HeadsetServiceTest {
         // Change phone state
         mHeadsetServiceBinder.phoneStateChanged(headsetCallState.mNumActive,
                 headsetCallState.mNumHeld, headsetCallState.mCallState, headsetCallState.mNumber,
-                headsetCallState.mType, headsetCallState.mName);
+                headsetCallState.mType, headsetCallState.mName, mAdapter.getAttributionSource());
         // Ask Audio HAL to suspend A2DP
         verify(mAudioManager, timeout(ASYNC_CALL_TIMEOUT_MILLIS))
                 .setParameters("A2dpSuspended=true");
@@ -898,6 +898,31 @@ public class HeadsetServiceTest {
         // Test that active device should not be changed when another device exits silence mode
         Assert.assertTrue(mHeadsetService.setSilenceMode(otherDevice, false));
         Assert.assertEquals(mCurrentDevice, mHeadsetService.getActiveDevice());
+    }
+
+    /**
+     * Test that whether active device been removed after enable silence mode
+     */
+    @Test
+    public void testSetActiveDevice_AudioNotAllowed() {
+        when(mDatabaseManager.getProfileConnectionPolicy(any(BluetoothDevice.class),
+                eq(BluetoothProfile.HEADSET)))
+                .thenReturn(BluetoothProfile.CONNECTION_POLICY_UNKNOWN);
+        mCurrentDevice = TestUtils.getTestDevice(mAdapter, 0);
+        mHeadsetService.setForceScoAudio(false);
+
+        Assert.assertTrue(mHeadsetService.connect(mCurrentDevice));
+        when(mStateMachines.get(mCurrentDevice).getDevice()).thenReturn(mCurrentDevice);
+        when(mStateMachines.get(mCurrentDevice).getConnectionState()).thenReturn(
+                BluetoothProfile.STATE_CONNECTED);
+
+        Assert.assertTrue(mHeadsetService.setActiveDevice(null));
+        when(mSystemInterface.isInCall()).thenReturn(true);
+        mHeadsetService.setAudioRouteAllowed(false);
+
+        // Test that active device should not be changed if audio is not allowed
+        Assert.assertFalse(mHeadsetService.setActiveDevice(mCurrentDevice));
+        Assert.assertEquals(null, mHeadsetService.getActiveDevice());
     }
 
     /*

@@ -99,27 +99,11 @@ public class LeAudioNativeInterface {
         sendMessageToService(event);
     }
 
-    // Callbacks from the native stack back into the Java framework.
-    // All callbacks are routed via the Service which will disambiguate which
-    // state machine the message should be routed to.
-    private void onSetMemberAvailable(byte[] address, int groupId) {
-        LeAudioStackEvent event =
-                new LeAudioStackEvent(LeAudioStackEvent.EVENT_TYPE_SET_MEMBER_AVAILABLE);
-        event.device = getDevice(address);
-        event.valueInt1 = groupId;
-        if (DBG) {
-            Log.d(TAG, "onSetMemberAvailable: " + event);
-        }
-        sendMessageToService(event);
-    }
-
-    private void onGroupStatus(int groupId, int groupStatus, int groupFlags) {
+    private void onGroupStatus(int groupId, int groupStatus) {
         LeAudioStackEvent event =
                 new LeAudioStackEvent(LeAudioStackEvent.EVENT_TYPE_GROUP_STATUS_CHANGED);
         event.valueInt1 = groupId;
         event.valueInt2 = groupStatus;
-        event.valueInt3 = groupFlags;
-        event.device = null;
 
         if (DBG) {
             Log.d(TAG, "onGroupStatus: " + event);
@@ -193,29 +177,29 @@ public class LeAudioNativeInterface {
     }
 
     /**
-     * Enable content streaming.
+     * Add new Node into a group.
      * @param groupId group identifier
-     * @param contentType type of content to stream
+     * @param device remote device
      */
-    public void groupStream(int groupId, int contentType) {
-        groupStreamNative(groupId, contentType);
+     public boolean groupAddNode(int groupId, BluetoothDevice device) {
+        return groupAddNodeNative(groupId, getByteAddress(device));
     }
 
     /**
-     * Suspend content streaming.
-     * @param groupId  group identifier
+     * Add new Node into a group.
+     * @param groupId group identifier
+     * @param device remote device
      */
-    public void groupSuspend(int groupId) {
-        groupSuspendNative(groupId);
+    public boolean groupRemoveNode(int groupId, BluetoothDevice device) {
+        return groupRemoveNodeNative(groupId, getByteAddress(device));
     }
 
     /**
-     * Stop all content streaming.
-     * @param groupId  group identifier
-     * TODO: Maybe we should use also pass the content type argument
+     * Set active group.
+     * @param groupId group ID to set as active
      */
-    public void groupStop(int groupId) {
-        groupStopNative(groupId);
+    public void groupSetActive(int groupId) {
+        groupSetActiveNative(groupId);
     }
 
     // Native methods that call into the JNI interface
@@ -224,7 +208,7 @@ public class LeAudioNativeInterface {
     private native void cleanupNative();
     private native boolean connectLeAudioNative(byte[] address);
     private native boolean disconnectLeAudioNative(byte[] address);
-    private native void groupStreamNative(int groupId, int contentType);
-    private native void groupSuspendNative(int groupId);
-    private native void groupStopNative(int groupId);
+    private native boolean groupAddNodeNative(int groupId, byte[] address);
+    private native boolean groupRemoveNodeNative(int groupId, byte[] address);
+    private native void groupSetActiveNative(int groupId);
 }
