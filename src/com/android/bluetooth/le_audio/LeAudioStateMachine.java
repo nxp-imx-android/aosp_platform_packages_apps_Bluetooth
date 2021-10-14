@@ -53,7 +53,11 @@ import android.content.Intent;
 import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
+import static android.Manifest.permission.BLUETOOTH_CONNECT;
 
+import android.annotation.RequiresPermission;
+
+import com.android.bluetooth.Utils;
 import com.android.bluetooth.btservice.ProfileService;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.State;
@@ -76,6 +80,7 @@ final class LeAudioStateMachine extends StateMachine {
     private Connecting mConnecting;
     private Disconnecting mDisconnecting;
     private Connected mConnected;
+    private int mConnectionState = BluetoothProfile.STATE_DISCONNECTED;
 
     private int mLastConnectionState = -1;
 
@@ -127,6 +132,7 @@ final class LeAudioStateMachine extends StateMachine {
         public void enter() {
             Log.i(TAG, "Enter Disconnected(" + mDevice + "): " + messageWhatToString(
                     getCurrentMessage().what));
+            mConnectionState = BluetoothProfile.STATE_DISCONNECTED;
 
             removeDeferredMessages(DISCONNECT);
 
@@ -151,8 +157,7 @@ final class LeAudioStateMachine extends StateMachine {
 
             switch (message.what) {
                 case CONNECT:
-                    int groupId = message.arg1;
-                    log("Connecting to " + mDevice + " group " + groupId);
+                    log("Connecting to " + mDevice);
                     if (!mNativeInterface.connectLeAudio(mDevice)) {
                         Log.e(TAG, "Disconnected: error connecting to " + mDevice);
                         break;
@@ -178,7 +183,7 @@ final class LeAudioStateMachine extends StateMachine {
                     }
                     switch (event.type) {
                         case LeAudioStackEvent.EVENT_TYPE_CONNECTION_STATE_CHANGED:
-                            processConnectionEvent(event.valueInt1, event.valueInt2);
+                            processConnectionEvent(event.valueInt1);
                             break;
                         default:
                             Log.e(TAG, "Disconnected: ignoring stack event: " + event);
@@ -192,7 +197,7 @@ final class LeAudioStateMachine extends StateMachine {
         }
 
         // in Disconnected state
-        private void processConnectionEvent(int state, int groupId) {
+        private void processConnectionEvent(int state) {
             switch (state) {
                 case LeAudioStackEvent.CONNECTION_STATE_DISCONNECTED:
                     Log.w(TAG, "Ignore LeAudio DISCONNECTED event: " + mDevice);
@@ -235,6 +240,7 @@ final class LeAudioStateMachine extends StateMachine {
             Log.i(TAG, "Enter Connecting(" + mDevice + "): "
                     + messageWhatToString(getCurrentMessage().what));
             sendMessageDelayed(CONNECT_TIMEOUT, sConnectTimeoutMs);
+            mConnectionState = BluetoothProfile.STATE_CONNECTING;
             broadcastConnectionState(BluetoothProfile.STATE_CONNECTING, mLastConnectionState);
         }
 
@@ -278,7 +284,7 @@ final class LeAudioStateMachine extends StateMachine {
                     }
                     switch (event.type) {
                         case LeAudioStackEvent.EVENT_TYPE_CONNECTION_STATE_CHANGED:
-                            processConnectionEvent(event.valueInt1, event.valueInt2);
+                            processConnectionEvent(event.valueInt1);
                             break;
                         default:
                             Log.e(TAG, "Connecting: ignoring stack event: " + event);
@@ -292,7 +298,7 @@ final class LeAudioStateMachine extends StateMachine {
         }
 
         // in Connecting state
-        private void processConnectionEvent(int state, int groupId) {
+        private void processConnectionEvent(int state) {
             switch (state) {
                 case LeAudioStackEvent.CONNECTION_STATE_DISCONNECTED:
                     Log.w(TAG, "Connecting device disconnected: " + mDevice);
@@ -321,6 +327,7 @@ final class LeAudioStateMachine extends StateMachine {
             Log.i(TAG, "Enter Disconnecting(" + mDevice + "): "
                     + messageWhatToString(getCurrentMessage().what));
             sendMessageDelayed(CONNECT_TIMEOUT, sConnectTimeoutMs);
+            mConnectionState = BluetoothProfile.STATE_DISCONNECTING;
             broadcastConnectionState(BluetoothProfile.STATE_DISCONNECTING, mLastConnectionState);
         }
 
@@ -363,7 +370,7 @@ final class LeAudioStateMachine extends StateMachine {
                     }
                     switch (event.type) {
                         case LeAudioStackEvent.EVENT_TYPE_CONNECTION_STATE_CHANGED:
-                            processConnectionEvent(event.valueInt1, event.valueInt2);
+                            processConnectionEvent(event.valueInt1);
                             break;
                         default:
                             Log.e(TAG, "Disconnecting: ignoring stack event: " + event);
@@ -377,7 +384,7 @@ final class LeAudioStateMachine extends StateMachine {
         }
 
         // in Disconnecting state
-        private void processConnectionEvent(int state, int groupId) {
+        private void processConnectionEvent(int state) {
             switch (state) {
                 case LeAudioStackEvent.CONNECTION_STATE_DISCONNECTED:
                     Log.i(TAG, "Disconnected: " + mDevice);
@@ -418,6 +425,7 @@ final class LeAudioStateMachine extends StateMachine {
         public void enter() {
             Log.i(TAG, "Enter Connected(" + mDevice + "): "
                     + messageWhatToString(getCurrentMessage().what));
+            mConnectionState = BluetoothProfile.STATE_CONNECTED;
             removeDeferredMessages(CONNECT);
             broadcastConnectionState(BluetoothProfile.STATE_CONNECTED, mLastConnectionState);
         }
@@ -456,7 +464,7 @@ final class LeAudioStateMachine extends StateMachine {
                     }
                     switch (event.type) {
                         case LeAudioStackEvent.EVENT_TYPE_CONNECTION_STATE_CHANGED:
-                            processConnectionEvent(event.valueInt1, event.valueInt2);
+                            processConnectionEvent(event.valueInt1);
                             break;
                         default:
                             Log.e(TAG, "Connected: ignoring stack event: " + event);
@@ -470,7 +478,7 @@ final class LeAudioStateMachine extends StateMachine {
         }
 
         // in Connected state
-        private void processConnectionEvent(int state, int groupId) {
+        private void processConnectionEvent(int state) {
             switch (state) {
                 case LeAudioStackEvent.CONNECTION_STATE_DISCONNECTED:
                     Log.i(TAG, "Disconnected from " + mDevice);
@@ -488,20 +496,7 @@ final class LeAudioStateMachine extends StateMachine {
     }
 
     int getConnectionState() {
-        String currentState = getCurrentState().getName();
-        switch (currentState) {
-            case "Disconnected":
-                return BluetoothProfile.STATE_DISCONNECTED;
-            case "Connecting":
-                return BluetoothProfile.STATE_CONNECTING;
-            case "Connected":
-                return BluetoothProfile.STATE_CONNECTED;
-            case "Disconnecting":
-                return BluetoothProfile.STATE_DISCONNECTING;
-            default:
-                Log.e(TAG, "Bad currentState: " + currentState);
-                return BluetoothProfile.STATE_DISCONNECTED;
-        }
+        return mConnectionState;
     }
 
     BluetoothDevice getDevice() {
@@ -509,7 +504,7 @@ final class LeAudioStateMachine extends StateMachine {
     }
 
     synchronized boolean isConnected() {
-        return getCurrentState() == mConnected;
+        return (getConnectionState() == BluetoothProfile.STATE_CONNECTED);
     }
 
     // This method does not check for error condition (newState == prevState)
@@ -523,7 +518,7 @@ final class LeAudioStateMachine extends StateMachine {
         intent.putExtra(BluetoothDevice.EXTRA_DEVICE, mDevice);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
                         | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
-        mService.sendBroadcast(intent, ProfileService.BLUETOOTH_PERM);
+        mService.sendBroadcast(intent, BLUETOOTH_CONNECT, Utils.getTempAllowlistBroadcastOptions());
     }
 
     private static String messageWhatToString(int what) {
