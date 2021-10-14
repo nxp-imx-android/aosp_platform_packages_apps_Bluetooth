@@ -28,6 +28,7 @@
 #include "hardware/bt_le_audio.h"
 
 using bluetooth::le_audio::ConnectionState;
+using bluetooth::le_audio::GroupNodeStatus;
 using bluetooth::le_audio::GroupStatus;
 using bluetooth::le_audio::LeAudioClientCallbacks;
 using bluetooth::le_audio::LeAudioClientInterface;
@@ -35,8 +36,8 @@ using bluetooth::le_audio::LeAudioClientInterface;
 namespace android {
 static jmethodID method_onConnectionStateChanged;
 static jmethodID method_onGroupStatus;
+static jmethodID method_onGroupNodeStatus;
 static jmethodID method_onAudioConf;
-static jmethodID method_onSetMemberAvailable;
 
 static LeAudioClientInterface* sLeAudioClientInterface = nullptr;
 static std::shared_timed_mutex interface_mutex;
@@ -69,8 +70,7 @@ class LeAudioClientCallbacksImpl : public LeAudioClientCallbacks {
                                  (jint)state, addr.get());
   }
 
-  void OnGroupStatus(uint8_t group_id, GroupStatus group_status,
-                     uint8_t group_flags) override {
+  void OnGroupStatus(int group_id, GroupStatus group_status) override {
     LOG(INFO) << __func__;
 
     std::shared_lock<std::shared_timed_mutex> lock(callbacks_mutex);
@@ -78,8 +78,28 @@ class LeAudioClientCallbacksImpl : public LeAudioClientCallbacks {
     if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) return;
 
     sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onGroupStatus,
-                                 (jint)group_id, (jint)group_status,
-                                 (jint)group_flags);
+                                 (jint)group_id, (jint)group_status);
+  }
+
+  void OnGroupNodeStatus(const RawAddress& bd_addr, int group_id,
+                         GroupNodeStatus node_status) override {
+    LOG(INFO) << __func__;
+
+    std::shared_lock<std::shared_timed_mutex> lock(callbacks_mutex);
+    CallbackEnv sCallbackEnv(__func__);
+    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) return;
+
+    ScopedLocalRef<jbyteArray> addr(
+        sCallbackEnv.get(), sCallbackEnv->NewByteArray(sizeof(RawAddress)));
+    if (!addr.get()) {
+      LOG(ERROR) << "Failed to new jbyteArray bd addr for group status";
+      return;
+    }
+
+    sCallbackEnv->SetByteArrayRegion(addr.get(), 0, sizeof(RawAddress),
+                                     (jbyte*)&bd_addr);
+    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onGroupNodeStatus,
+                                 addr.get(), (jint)group_id, (jint)node_status);
   }
 
   void OnAudioConf(uint8_t direction, int group_id,
@@ -96,38 +116,17 @@ class LeAudioClientCallbacksImpl : public LeAudioClientCallbacks {
                                  (jint)sink_audio_location,
                                  (jint)source_audio_location, (jint)avail_cont);
   }
-
-  void OnSetMemberAvailable(const RawAddress& bd_addr,
-                            uint8_t group_id) override {
-    LOG(INFO) << __func__ << ", group id:" << int(group_id);
-
-    std::shared_lock<std::shared_timed_mutex> lock(callbacks_mutex);
-    CallbackEnv sCallbackEnv(__func__);
-    if (!sCallbackEnv.valid() || mCallbacksObj == nullptr) return;
-
-    ScopedLocalRef<jbyteArray> addr(
-        sCallbackEnv.get(), sCallbackEnv->NewByteArray(sizeof(RawAddress)));
-    if (!addr.get()) {
-      LOG(ERROR) << "Failed to new jbyteArray bd addr for connection state";
-      return;
-    }
-
-    sCallbackEnv->SetByteArrayRegion(addr.get(), 0, sizeof(RawAddress),
-                                     (jbyte*)&bd_addr);
-    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onSetMemberAvailable,
-                                 addr.get(), (jint)group_id);
-  }
 };
 
 static LeAudioClientCallbacksImpl sLeAudioClientCallbacks;
 
 static void classInitNative(JNIEnv* env, jclass clazz) {
-  method_onGroupStatus = env->GetMethodID(clazz, "onGroupStatus", "(III)V");
+  method_onGroupStatus = env->GetMethodID(clazz, "onGroupStatus", "(II)V");
+  method_onGroupNodeStatus =
+      env->GetMethodID(clazz, "onGroupNodeStatus", "([BII)V");
   method_onAudioConf = env->GetMethodID(clazz, "onAudioConf", "(IIIII)V");
   method_onConnectionStateChanged =
       env->GetMethodID(clazz, "onConnectionStateChanged", "(I[B)V");
-  method_onSetMemberAvailable =
-      env->GetMethodID(clazz, "onSetMemberAvailable", "([BI)V");
 }
 
 static void initNative(JNIEnv* env, jobject object) {
@@ -219,30 +218,48 @@ static jboolean disconnectLeAudioNative(JNIEnv* env, jobject object,
   return JNI_TRUE;
 }
 
-static void groupStreamNative(JNIEnv* env, jobject object, jint group_id,
-                              jint content_type) {
-  LOG(INFO) << __func__;
+static jboolean groupAddNodeNative(JNIEnv* env, jobject object, jint group_id,
+                                   jbyteArray address) {
+  jbyte* addr = env->GetByteArrayElements(address, nullptr);
 
   if (!sLeAudioClientInterface) {
     LOG(ERROR) << __func__ << ": Failed to get the Bluetooth LeAudio Interface";
-    return;
+    return JNI_FALSE;
   }
 
-  sLeAudioClientInterface->GroupStream(group_id, content_type);
+  if (!addr) {
+    jniThrowIOException(env, EINVAL);
+    return JNI_FALSE;
+  }
+
+  RawAddress* tmpraw = (RawAddress*)addr;
+  sLeAudioClientInterface->GroupAddNode(group_id, *tmpraw);
+  env->ReleaseByteArrayElements(address, addr, 0);
+
+  return JNI_TRUE;
 }
 
-static void groupSuspendNative(JNIEnv* env, jobject object, jint group_id) {
-  LOG(INFO) << __func__;
+static jboolean groupRemoveNodeNative(JNIEnv* env, jobject object,
+                                      jint group_id, jbyteArray address) {
 
   if (!sLeAudioClientInterface) {
     LOG(ERROR) << __func__ << ": Failed to get the Bluetooth LeAudio Interface";
-    return;
+    return JNI_FALSE;
   }
 
-  sLeAudioClientInterface->GroupSuspend(group_id);
+  jbyte* addr = env->GetByteArrayElements(address, nullptr);
+  if (!addr) {
+    jniThrowIOException(env, EINVAL);
+    return JNI_FALSE;
+  }
+
+  RawAddress* tmpraw = (RawAddress*)addr;
+  sLeAudioClientInterface->GroupRemoveNode(group_id, *tmpraw);
+  env->ReleaseByteArrayElements(address, addr, 0);
+  return JNI_TRUE;
 }
 
-static void groupStopNative(JNIEnv* env, jobject object, jint group_id) {
+static void groupSetActiveNative(JNIEnv* env, jobject object, jint group_id) {
   LOG(INFO) << __func__;
 
   if (!sLeAudioClientInterface) {
@@ -250,7 +267,7 @@ static void groupStopNative(JNIEnv* env, jobject object, jint group_id) {
     return;
   }
 
-  sLeAudioClientInterface->GroupStop(group_id);
+  sLeAudioClientInterface->GroupSetActive(group_id);
 }
 
 static JNINativeMethod sMethods[] = {
@@ -259,9 +276,9 @@ static JNINativeMethod sMethods[] = {
     {"cleanupNative", "()V", (void*)cleanupNative},
     {"connectLeAudioNative", "([B)Z", (void*)connectLeAudioNative},
     {"disconnectLeAudioNative", "([B)Z", (void*)disconnectLeAudioNative},
-    {"groupStreamNative", "(II)V", (void*)groupStreamNative},
-    {"groupSuspendNative", "(I)V", (void*)groupSuspendNative},
-    {"groupStopNative", "(I)V", (void*)groupStopNative},
+    {"groupAddNodeNative", "(I[B)Z", (void*)groupAddNodeNative},
+    {"groupRemoveNodeNative", "(I[B)Z", (void*)groupRemoveNodeNative},
+    {"groupSetActiveNative", "(I)V", (void*)groupSetActiveNative},
 };
 
 int register_com_android_bluetooth_le_audio(JNIEnv* env) {
