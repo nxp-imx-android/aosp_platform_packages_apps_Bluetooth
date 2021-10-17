@@ -218,12 +218,67 @@ static jboolean disconnectLeAudioNative(JNIEnv* env, jobject object,
   return JNI_TRUE;
 }
 
+static jboolean groupAddNodeNative(JNIEnv* env, jobject object, jint group_id,
+                                   jbyteArray address) {
+  jbyte* addr = env->GetByteArrayElements(address, nullptr);
+
+  if (!sLeAudioClientInterface) {
+    LOG(ERROR) << __func__ << ": Failed to get the Bluetooth LeAudio Interface";
+    return JNI_FALSE;
+  }
+
+  if (!addr) {
+    jniThrowIOException(env, EINVAL);
+    return JNI_FALSE;
+  }
+
+  RawAddress* tmpraw = (RawAddress*)addr;
+  sLeAudioClientInterface->GroupAddNode(group_id, *tmpraw);
+  env->ReleaseByteArrayElements(address, addr, 0);
+
+  return JNI_TRUE;
+}
+
+static jboolean groupRemoveNodeNative(JNIEnv* env, jobject object,
+                                      jint group_id, jbyteArray address) {
+
+  if (!sLeAudioClientInterface) {
+    LOG(ERROR) << __func__ << ": Failed to get the Bluetooth LeAudio Interface";
+    return JNI_FALSE;
+  }
+
+  jbyte* addr = env->GetByteArrayElements(address, nullptr);
+  if (!addr) {
+    jniThrowIOException(env, EINVAL);
+    return JNI_FALSE;
+  }
+
+  RawAddress* tmpraw = (RawAddress*)addr;
+  sLeAudioClientInterface->GroupRemoveNode(group_id, *tmpraw);
+  env->ReleaseByteArrayElements(address, addr, 0);
+  return JNI_TRUE;
+}
+
+static void groupSetActiveNative(JNIEnv* env, jobject object, jint group_id) {
+  LOG(INFO) << __func__;
+
+  if (!sLeAudioClientInterface) {
+    LOG(ERROR) << __func__ << ": Failed to get the Bluetooth LeAudio Interface";
+    return;
+  }
+
+  sLeAudioClientInterface->GroupSetActive(group_id);
+}
+
 static JNINativeMethod sMethods[] = {
     {"classInitNative", "()V", (void*)classInitNative},
     {"initNative", "()V", (void*)initNative},
     {"cleanupNative", "()V", (void*)cleanupNative},
     {"connectLeAudioNative", "([B)Z", (void*)connectLeAudioNative},
     {"disconnectLeAudioNative", "([B)Z", (void*)disconnectLeAudioNative},
+    {"groupAddNodeNative", "(I[B)Z", (void*)groupAddNodeNative},
+    {"groupRemoveNodeNative", "(I[B)Z", (void*)groupRemoveNodeNative},
+    {"groupSetActiveNative", "(I)V", (void*)groupSetActiveNative},
 };
 
 int register_com_android_bluetooth_le_audio(JNIEnv* env) {
