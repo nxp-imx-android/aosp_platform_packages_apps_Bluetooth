@@ -820,10 +820,6 @@ public class AdapterService extends Service {
             mSdpManager = null;
         }
 
-        if (mBluetoothKeystoreService != null) {
-            mBluetoothKeystoreService.cleanup();
-        }
-
         if (mActivityAttributionService != null) {
             mActivityAttributionService.cleanup();
         }
@@ -840,6 +836,11 @@ public class AdapterService extends Service {
 
         if (mJniCallbacks != null) {
             mJniCallbacks.cleanup();
+        }
+
+        if (mBluetoothKeystoreService != null) {
+            debugLog("cleanup(): mBluetoothKeystoreService.cleanup()");
+            mBluetoothKeystoreService.cleanup();
         }
 
         if (mPhonePolicy != null) {
@@ -2373,6 +2374,34 @@ public class AdapterService extends Service {
             }
 
             return service.isLePeriodicAdvertisingSupported();
+        }
+
+        @Override
+        public int isCisCentralSupported() {
+            AdapterService service = getService();
+            if (service == null) {
+                return BluetoothStatusCodes.ERROR_BLUETOOTH_NOT_ENABLED;
+            }
+
+            if (service.mAdapterProperties.isLeConnectedIsochronousStreamCentralSupported()) {
+                return BluetoothStatusCodes.SUCCESS;
+            }
+
+            return BluetoothStatusCodes.ERROR_FEATURE_NOT_SUPPORTED;
+        }
+
+        @Override
+        public int isLePeriodicAdvertisingSyncTransferSenderSupported() {
+            AdapterService service = getService();
+            if (service == null) {
+                return BluetoothStatusCodes.ERROR_BLUETOOTH_NOT_ENABLED;
+            }
+
+            if (service.mAdapterProperties.isLePeriodicAdvertisingSyncTransferSenderSupported()) {
+                return BluetoothStatusCodes.SUCCESS;
+            }
+
+            return BluetoothStatusCodes.ERROR_FEATURE_NOT_SUPPORTED;
         }
 
         @Override
