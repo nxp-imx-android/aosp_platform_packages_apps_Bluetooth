@@ -456,8 +456,6 @@ public class AdapterService extends Service {
         mJniCallbacks = new JniCallbacks(this, mAdapterProperties);
         mBluetoothKeystoreService = new BluetoothKeystoreService(isCommonCriteriaMode());
         mBluetoothKeystoreService.start();
-        mActivityAttributionService = new ActivityAttributionService();
-        mActivityAttributionService.start();
         int configCompareResult = mBluetoothKeystoreService.getCompareResult();
 
         // Start tracking Binder latency for the bluetooth process.
@@ -511,6 +509,9 @@ public class AdapterService extends Service {
         mSilenceDeviceManager.start();
 
         mBluetoothSocketManagerBinder = new BluetoothSocketManagerBinder(this);
+
+        mActivityAttributionService = new ActivityAttributionService();
+        mActivityAttributionService.start();
 
         setAdapterService(this);
 
@@ -820,10 +821,6 @@ public class AdapterService extends Service {
             mSdpManager = null;
         }
 
-        if (mBluetoothKeystoreService != null) {
-            mBluetoothKeystoreService.cleanup();
-        }
-
         if (mActivityAttributionService != null) {
             mActivityAttributionService.cleanup();
         }
@@ -840,6 +837,11 @@ public class AdapterService extends Service {
 
         if (mJniCallbacks != null) {
             mJniCallbacks.cleanup();
+        }
+
+        if (mBluetoothKeystoreService != null) {
+            debugLog("cleanup(): mBluetoothKeystoreService.cleanup()");
+            mBluetoothKeystoreService.cleanup();
         }
 
         if (mPhonePolicy != null) {
@@ -2376,6 +2378,34 @@ public class AdapterService extends Service {
         }
 
         @Override
+        public int isCisCentralSupported() {
+            AdapterService service = getService();
+            if (service == null) {
+                return BluetoothStatusCodes.ERROR_BLUETOOTH_NOT_ENABLED;
+            }
+
+            if (service.mAdapterProperties.isLeConnectedIsochronousStreamCentralSupported()) {
+                return BluetoothStatusCodes.SUCCESS;
+            }
+
+            return BluetoothStatusCodes.ERROR_FEATURE_NOT_SUPPORTED;
+        }
+
+        @Override
+        public int isLePeriodicAdvertisingSyncTransferSenderSupported() {
+            AdapterService service = getService();
+            if (service == null) {
+                return BluetoothStatusCodes.ERROR_BLUETOOTH_NOT_ENABLED;
+            }
+
+            if (service.mAdapterProperties.isLePeriodicAdvertisingSyncTransferSenderSupported()) {
+                return BluetoothStatusCodes.SUCCESS;
+            }
+
+            return BluetoothStatusCodes.ERROR_FEATURE_NOT_SUPPORTED;
+        }
+
+        @Override
         public int getLeMaximumAdvertisingDataLength() {
             AdapterService service = getService();
             if (service == null) {
@@ -3394,12 +3424,12 @@ public class AdapterService extends Service {
             }
 
             // Copy the traffic objects whose byte counts are > 0
-            final UidTraffic[] result = arrayLen > 0 ? new UidTraffic[arrayLen] : null;
+            final List<UidTraffic> result = new ArrayList<>();
             int putIdx = 0;
             for (int i = 0; i < mUidTraffic.size(); i++) {
                 final UidTraffic traffic = mUidTraffic.valueAt(i);
                 if (traffic.getTxBytes() != 0 || traffic.getRxBytes() != 0) {
-                    result[putIdx++] = traffic.clone();
+                    result.add(traffic.clone());
                 }
             }
 
@@ -3788,7 +3818,7 @@ public class AdapterService extends Service {
             initFlags.add(String.format("%s=%s", LOGGING_DEBUG_DISABLED_FOR_TAGS_FLAG,
                     debugLoggingDisabledTags));
         }
-        if (DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_BLUETOOTH, BTAA_HCI_LOG_FLAG, false)) {
+        if (DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_BLUETOOTH, BTAA_HCI_LOG_FLAG, true)) {
             initFlags.add(String.format("%s=%s", BTAA_HCI_LOG_FLAG, "true"));
         }
         return initFlags.toArray(new String[0]);
