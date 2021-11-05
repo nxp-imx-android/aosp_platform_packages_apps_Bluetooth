@@ -483,7 +483,9 @@ public class HeadsetClientStateMachine extends StateMachine {
 
         if (mCalls.size() > 0) {
             if (mService.getResources().getBoolean(R.bool.hfp_clcc_poll_during_call)) {
-                sendMessageDelayed(QUERY_CURRENT_CALLS, QUERY_CURRENT_CALLS_WAIT_MILLIS);
+                sendMessageDelayed(QUERY_CURRENT_CALLS,
+                        mService.getResources().getInteger(
+                        R.integer.hfp_clcc_poll_interval_during_call));
             } else {
                 if (getCall(BluetoothHeadsetClientCall.CALL_STATE_INCOMING) != null) {
                     logD("Still have incoming call; polling");
@@ -813,9 +815,9 @@ public class HeadsetClientStateMachine extends StateMachine {
         }
         logD("hfp_enable=" + enable);
         if (enable && !sAudioIsRouted) {
-            mAudioManager.setParameters("hfp_enable=true");
+            mAudioManager.setHfpEnabled(true);
         } else if (!enable) {
-            mAudioManager.setParameters("hfp_enable=false");
+            mAudioManager.setHfpEnabled(false);
         }
         sAudioIsRouted = enable;
     }
@@ -1330,9 +1332,16 @@ public class HeadsetClientStateMachine extends StateMachine {
                     break;
                 case QUERY_CURRENT_CALLS:
                     removeMessages(QUERY_CURRENT_CALLS);
-                    if (mCalls.size() > 0) {
-                        // If there are ongoing calls periodically check their status.
-                        sendMessageDelayed(QUERY_CURRENT_CALLS, QUERY_CURRENT_CALLS_WAIT_MILLIS);
+                    // If there are ongoing calls periodically check their status.
+                    if (mCalls.size() > 1
+                            && mService.getResources().getBoolean(
+                            R.bool.hfp_clcc_poll_during_call)) {
+                        sendMessageDelayed(QUERY_CURRENT_CALLS,
+                                mService.getResources().getInteger(
+                                R.integer.hfp_clcc_poll_interval_during_call));
+                    } else if (mCalls.size() > 0) {
+                        sendMessageDelayed(QUERY_CURRENT_CALLS,
+                                QUERY_CURRENT_CALLS_WAIT_MILLIS);
                     }
                     queryCallsStart();
                     break;
@@ -1583,7 +1592,7 @@ public class HeadsetClientStateMachine extends StateMachine {
                     // routing is handled by the bluetooth stack itself. The only reason to do so is
                     // because Bluetooth SCO connection from the HF role is not entirely supported
                     // for routing and volume purposes.
-                    // NOTE: All calls here are routed via the setParameters which changes the
+                    // NOTE: All calls here are routed via AudioManager methods which changes the
                     // routing at the Audio HAL level.
 
                     if (mService.isScoRouted()) {
@@ -1605,15 +1614,15 @@ public class HeadsetClientStateMachine extends StateMachine {
                     logD("hfp_enable=true mAudioWbs is " + mAudioWbs);
                     if (mAudioWbs) {
                         logD("Setting sampling rate as 16000");
-                        mAudioManager.setParameters("hfp_set_sampling_rate=16000");
+                        mAudioManager.setHfpSamplingRate(16000);
                     } else {
                         logD("Setting sampling rate as 8000");
-                        mAudioManager.setParameters("hfp_set_sampling_rate=8000");
+                        mAudioManager.setHfpSamplingRate(8000);
                     }
                     logD("hf_volume " + hfVol);
                     routeHfpAudio(true);
                     mAudioFocusRequest = requestAudioFocus();
-                    mAudioManager.setParameters("hfp_volume=" + hfVol);
+                    mAudioManager.setHfpVolume(hfVol);
                     transitionTo(mAudioOn);
                     break;
 
