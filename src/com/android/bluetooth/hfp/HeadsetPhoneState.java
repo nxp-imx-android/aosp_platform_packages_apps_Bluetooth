@@ -70,6 +70,8 @@ public class HeadsetPhoneState {
     private final HashMap<BluetoothDevice, Integer> mDeviceEventMap = new HashMap<>();
     private PhoneStateListener mPhoneStateListener;
     private final OnSubscriptionsChangedListener mOnSubscriptionsChangedListener;
+    // TODO(b/205585585): Re-enable SignalStrengthUpdateRequest to support "always report signal
+    // strength" when the crash is fixed.
 
     HeadsetPhoneState(HeadsetService headsetService) {
         Objects.requireNonNull(headsetService, "headsetService is null");

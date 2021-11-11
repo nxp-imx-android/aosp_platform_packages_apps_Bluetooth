@@ -98,6 +98,7 @@ import com.android.bluetooth.BluetoothStatsLog;
 import com.android.bluetooth.Utils;
 import com.android.bluetooth.a2dp.A2dpService;
 import com.android.bluetooth.a2dpsink.A2dpSinkService;
+import com.android.bluetooth.btservice.MetricsLogger;
 import com.android.bluetooth.btservice.RemoteDevices.DeviceProperties;
 import com.android.bluetooth.btservice.activityattribution.ActivityAttributionService;
 import com.android.bluetooth.btservice.bluetoothkeystore.BluetoothKeystoreService;
@@ -305,6 +306,8 @@ public class AdapterService extends Service {
 
     private volatile boolean mTestModeEnabled = false;
 
+    private MetricsLogger mMetricsLogger;
+
     /**
      * Register a {@link ProfileService} with AdapterService.
      *
@@ -445,6 +448,7 @@ public class AdapterService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        initMetricsLogger();
         debugLog("onCreate()");
         mDeviceConfigListener.start();
         mRemoteDevices = new RemoteDevices(this, Looper.getMainLooper());
@@ -456,8 +460,6 @@ public class AdapterService extends Service {
         mJniCallbacks = new JniCallbacks(this, mAdapterProperties);
         mBluetoothKeystoreService = new BluetoothKeystoreService(isCommonCriteriaMode());
         mBluetoothKeystoreService.start();
-        mActivityAttributionService = new ActivityAttributionService();
-        mActivityAttributionService.start();
         int configCompareResult = mBluetoothKeystoreService.getCompareResult();
 
         // Start tracking Binder latency for the bluetooth process.
@@ -511,6 +513,9 @@ public class AdapterService extends Service {
         mSilenceDeviceManager.start();
 
         mBluetoothSocketManagerBinder = new BluetoothSocketManagerBinder(this);
+
+        mActivityAttributionService = new ActivityAttributionService();
+        mActivityAttributionService.start();
 
         setAdapterService(this);
 
@@ -581,6 +586,27 @@ public class AdapterService extends Service {
             }
         }
     };
+
+    private boolean initMetricsLogger() {
+        if (mMetricsLogger != null) {
+            return false;
+        }
+        mMetricsLogger = MetricsLogger.getInstance();
+        return mMetricsLogger.init(this);
+    }
+
+    private boolean closeMetricsLogger() {
+        if (mMetricsLogger == null) {
+            return false;
+        }
+        boolean result = mMetricsLogger.close();
+        mMetricsLogger = null;
+        return result;
+    }
+
+    public void setMetricsLogger(MetricsLogger metricsLogger) {
+        mMetricsLogger = metricsLogger;
+    }
 
     void bringUpBle() {
         debugLog("bleOnProcessStart()");
@@ -775,6 +801,8 @@ public class AdapterService extends Service {
             errorLog("cleanup() - Service already starting to cleanup, ignoring request...");
             return;
         }
+
+        closeMetricsLogger();
 
         clearAdapterService(this);
 
@@ -3817,7 +3845,7 @@ public class AdapterService extends Service {
             initFlags.add(String.format("%s=%s", LOGGING_DEBUG_DISABLED_FOR_TAGS_FLAG,
                     debugLoggingDisabledTags));
         }
-        if (DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_BLUETOOTH, BTAA_HCI_LOG_FLAG, false)) {
+        if (DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_BLUETOOTH, BTAA_HCI_LOG_FLAG, true)) {
             initFlags.add(String.format("%s=%s", BTAA_HCI_LOG_FLAG, "true"));
         }
         return initFlags.toArray(new String[0]);
