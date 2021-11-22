@@ -284,7 +284,7 @@ public class CsipSetCoordinatorService extends ProfileService {
         return true;
     }
 
-    List<BluetoothDevice> getConnectedDevices() {
+    public List<BluetoothDevice> getConnectedDevices() {
         enforceCallingOrSelfPermission(BLUETOOTH_CONNECT, "Need BLUETOOTH_CONNECT permission");
         synchronized (mStateMachines) {
             List<BluetoothDevice> devices = new ArrayList<>();
@@ -599,7 +599,9 @@ public class CsipSetCoordinatorService extends ProfileService {
 
         for (Map.Entry<Executor, IBluetoothCsipSetCoordinatorCallback> entry :
                 mCallbacks.get(uuid).entrySet()) {
-            Log.e(TAG, " executing " + uuid + " " + entry.getKey());
+            if (DBG) {
+                Log.d(TAG, " executing " + uuid + " " + entry.getKey());
+            }
             try {
                 executeCallback(entry.getKey(), entry.getValue(), device, groupId);
             } catch (RemoteException e) {
